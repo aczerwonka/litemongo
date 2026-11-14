@@ -1,5 +1,7 @@
 # LiteMongo — dokumentacja użytkownika
 
+> English version: [README.md](../README.md)
+
 LiteMongo to lekki, webowy klient MongoDB (alternatywa dla Compass / Studio 3T). Jeden proces Node.js serwuje API (`/api`), serwer MCP (`/mcp`) oraz skompilowany frontend React (PWA) na jednym porcie.
 
 **Ważne:** serwer jest bezstanowy. Connection stringi i hasła żyją wyłącznie w przeglądarce (localStorage) i są wysyłane z każdym żądaniem w nagłówku `X-Mongo-URI`. Serwer nic nie zapisuje na dysku.
@@ -17,8 +19,9 @@ LiteMongo to lekki, webowy klient MongoDB (alternatywa dla Compass / Studio 3T).
 9. [Konfiguracja przenośna `litemongo.config.json`](#9-konfiguracja-przenośna-litemongoconfigjson)
 10. [Serwer MCP (`/mcp`)](#10-serwer-mcp-mcp)
 11. [Instalacja jako aplikacja (PWA)](#11-instalacja-jako-aplikacja-pwa)
-12. [Testy i kontrola typów](#12-testy-i-kontrola-typów)
-13. [Rozwiązywanie problemów](#13-rozwiązywanie-problemów)
+12. [Aplikacja desktopowa (Electron)](#12-aplikacja-desktopowa-electron)
+13. [Testy i kontrola typów](#13-testy-i-kontrola-typów)
+14. [Rozwiązywanie problemów](#14-rozwiązywanie-problemów)
 
 ---
 
@@ -206,6 +209,7 @@ docker run -d --name litemongo -p 127.0.0.1:3001:3001 --read-only \
 | `CLIENT_DIST` | `client/dist` | Alternatywna ścieżka do zbudowanego frontendu |
 | `MONGO_CLIENT_IDLE_TTL_MS` | `300000` | Po jakim czasie bezczynności zamykany jest pool połączeń (5 min) |
 | `MONGO_MAX_CLIENTS` | `32` | Maks. liczba jednocześnie cache'owanych klientów MongoDB |
+| `LITEMONGO_DESKTOP_PORT` | `38017` | Port wbudowanego serwera w aplikacji desktopowej (Electron) |
 
 Nagłówki `X-Mongo-URI` nigdy nie są logowane.
 
@@ -246,9 +250,60 @@ Endpoint: `http://localhost:3001/mcp`. Aby serwer znał schematy i relacje, uruc
 
 LiteMongo jest Progressive Web App. W Chrome/Edge (po wejściu na działającą instancję) kliknij ikonę „Zainstaluj” w pasku adresu → aplikacja otwiera się we własnym oknie, z cache'em zasobów (w tym Monaco) działającym offline.
 
+Chcesz aplikację bez instalowania czegokolwiek? Zob. [sekcja 12](#12-aplikacja-desktopowa-electron).
+
 Uwaga: PWA nadal **wymaga działającego serwera** (kontener lub `npm start`), bo to on łączy się z MongoDB. Przeglądarka nie potrafi mówić protokołem MongoDB.
 
-## 12. Testy i kontrola typów
+## 12. Aplikacja desktopowa (Electron)
+
+Katalog `desktop/` zawiera opakowanie Electron: serwer Fastify jest wbudowany w aplikację, więc użytkownik końcowy **nie instaluje nic dodatkowego** (ani Node.js, ani Dockera). Aplikacja startuje serwer na `127.0.0.1:38017` i otwiera go we własnym oknie.
+
+### Uruchomienie w trybie deweloperskim
+
+```bash
+npm install                 # zależności główne (potrzebne do builda klienta/serwera)
+npm run desktop:install     # zależności Electrona (osobny pakiet w desktop/)
+npm run desktop:dev         # build klienta + start okna Electron
+```
+
+### Budowa instalatora
+
+```bash
+npm run desktop:dist                      # dla bieżącego systemu
+npm --prefix desktop run dist:mac         # macOS: .dmg + .zip
+npm --prefix desktop run dist:win         # Windows: instalator NSIS + wersja portable
+npm --prefix desktop run dist:linux       # Linux: AppImage + .deb
+```
+
+Gotowe pliki trafiają do `desktop/release/`. Instalator waży ok. 115 MB.
+
+### Budowa na Windows (x64)
+
+Tak, instalator Windows (`LiteMongo Setup 0.1.0.exe` oraz wersja portable `LiteMongo 0.1.0.exe`) da się zbudować **bezpośrednio na Macu** — przetestowane, bez Wine i bez dodatkowego oprogramowania. Skrypt `dist:win` wymusza architekturę x64 (domyślnie electron-builder użyłby architektury hosta, np. arm64 na Apple Silicon).
+
+```bash
+npm install && npm run desktop:install
+npm run build                           # raz: klient + serwer
+npm --prefix desktop run dist:win       # → desktop/release/*.exe
+```
+
+Na Windows ARM dodaj własny cel (`--arm64`) w `desktop/package.json`.
+
+Ograniczenia budowy cross-platform:
+
+- Nie przetestowano uruchomienia `.exe` na prawdziwym Windows — sprawdź na docelowej maszynie.
+- Podpisanie kodu (certyfikat Authenticode) wymaga dodatkowej konfiguracji; bez niego Windows pokaże SmartScreen.
+- Cel `.dmg` (macOS) da się zbudować tylko na macOS; Linux (`AppImage`, `.deb`) zwykle da się z Maca lub Linuksa. Najpewniejszy sposób na wszystkie platformy to CI z macierzą systemów (GitHub Actions).
+
+### Co warto wiedzieć
+
+- **Port stały (38017).** Profile połączeń żyją w localStorage okna, które jest przypisane do adresu (origin). Stały port zachowuje je między uruchomieniami. Zmiana: `LITEMONGO_DESKTOP_PORT=40000`. Jeśli port jest zajęty, aplikacja wybierze losowy, ale profile z poprzedniego portu nie będą widoczne.
+- **Jedna instancja** — ponowne uruchomienie przenosi fokus do istniejącego okna.
+- **Brak podpisu.** Bez certyfikatu Apple Developer macOS pokaże ostrzeżenie Gatekeepera (prawy klik → Otwórz). Windows wyświetli SmartScreen. Podpisywanie konfiguruje się w `desktop/package.json` → `build` (zob. dokumentacja electron-builder).
+- Linki zewnętrzne otwierają się w przeglądarce systemowej, a okno ładuje wyłącznie własny serwer lokalny.
+- Aplikacja desktopowa dba o to samo co kontener: bezstanowy serwer, hasła tylko w localStorage. `FORCE_READ_ONLY=true` działa również przy uruchomieniu z terminala.
+
+## 13. Testy i kontrola typów
 
 ```bash
 npm run typecheck    # tsc dla serwera i klienta
@@ -257,7 +312,7 @@ npm test             # testy serwera (node:test)
 
 > Testy integracyjne mogą wymagać działającej bazy MongoDB (zob. sekcja 3).
 
-## 13. Rozwiązywanie problemów
+## 14. Rozwiązywanie problemów
 
 | Objaw | Przyczyna / rozwiązanie |
 |---|---|

@@ -6,3 +6,11 @@ dist/
 .env.*
 !.env.example
 *.tsbuildinfo
+
+# Electron build leftovers (installers themselves go to GitHub Releases, not git)
+desktop/release/mac-arm64/
+desktop/release/mac/
+desktop/release/win-unpacked/
+desktop/release/linux-unpacked/
+desktop/release/.icon-*/
+desktop/release/builder-debug.yml

@@ -1,0 +1,32 @@
+{
+  "name": "litemongo-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LiteMongo desktop (Electron) — standalone app with embedded server",
+  "author": "LiteMongo",
+  "main": "dist/main.mjs",
+  "type": "module",
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "start": "npm run bundle && electron .",
+    "dist": "npm run bundle && electron-builder",
+    "dist:mac": "npm run bundle && electron-builder --mac",
+    "dist:win": "npm run bundle && electron-builder --win --x64",
+    "dist:linux": "npm run bundle && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0"
+  },
+  "build": {
+    "appId": "dev.litemongo.desktop",
+    "productName": "LiteMongo",
+    "directories": { "output": "release", "buildResources": "build" },
+    "files": ["dist/**", "package.json"],
+    "extraResources": [{ "from": "../client/dist", "to": "client" }],
+    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg", "zip"] },
+    "win": { "target": ["nsis", "portable"] },
+    "linux": { "target": ["AppImage", "deb"], "category": "Development" }
+  }
+}
