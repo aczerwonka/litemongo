@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="description" content="Lightweight, stateless MongoDB dev & jump-host client" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <title>LiteMongo</title>
+    <script>
+      // Apply the saved theme before first paint (same key as useThemeStore).
+      try {
+        var mode = (JSON.parse(localStorage.getItem('litemongo.theme') || '{}').state || {}).mode || 'system';
+        if (mode === 'system') mode = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = mode;
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="bg-zinc-950 text-zinc-100">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

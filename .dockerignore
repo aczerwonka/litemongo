@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/*.log
+**/.DS_Store
+.git
+.claude
+.env
+.env.*
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.md
+server/test

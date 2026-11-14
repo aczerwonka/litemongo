@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+/*
+ * Theming. Components are written once against the dark palette (zinc-950
+ * background, zinc-100 text, -300 accents on -950 tints). The light theme does
+ * not restyle them: it swaps the palette steps underneath, so `bg-zinc-950`
+ * becomes the lightest neutral and `text-emerald-300` a dark, readable green.
+ * Steps 500-700 stay put: they carry white text (buttons, environment banners).
+ * `--theme(… inline)` resolves to the literal colour at build time, which is
+ * what makes swapping two variables with each other possible.
+ */
+:root {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-zinc-50: --theme(--color-zinc-950 inline);
+  --color-zinc-100: --theme(--color-zinc-900 inline);
+  --color-zinc-200: --theme(--color-zinc-800 inline);
+  --color-zinc-300: --theme(--color-zinc-700 inline);
+  --color-zinc-400: --theme(--color-zinc-600 inline);
+  --color-zinc-600: --theme(--color-zinc-400 inline);
+  --color-zinc-700: --theme(--color-zinc-300 inline);
+  --color-zinc-800: --theme(--color-zinc-200 inline);
+  --color-zinc-900: --theme(--color-zinc-100 inline);
+  --color-zinc-950: --theme(--color-zinc-50 inline);
+
+  --color-emerald-50: --theme(--color-emerald-950 inline);
+  --color-emerald-100: --theme(--color-emerald-900 inline);
+  --color-emerald-200: --theme(--color-emerald-800 inline);
+  --color-emerald-300: --theme(--color-emerald-700 inline);
+  --color-emerald-400: --theme(--color-emerald-600 inline);
+  --color-emerald-800: --theme(--color-emerald-200 inline);
+  --color-emerald-900: --theme(--color-emerald-100 inline);
+  --color-emerald-950: --theme(--color-emerald-50 inline);
+
+  --color-red-50: --theme(--color-red-950 inline);
+  --color-red-100: --theme(--color-red-900 inline);
+  --color-red-200: --theme(--color-red-800 inline);
+  --color-red-300: --theme(--color-red-700 inline);
+  --color-red-400: --theme(--color-red-600 inline);
+  --color-red-800: --theme(--color-red-200 inline);
+  --color-red-900: --theme(--color-red-100 inline);
+  --color-red-950: --theme(--color-red-50 inline);
+
+  --color-amber-50: --theme(--color-amber-950 inline);
+  --color-amber-100: --theme(--color-amber-900 inline);
+  --color-amber-200: --theme(--color-amber-800 inline);
+  --color-amber-300: --theme(--color-amber-700 inline);
+  --color-amber-400: --theme(--color-amber-600 inline);
+  --color-amber-800: --theme(--color-amber-200 inline);
+  --color-amber-900: --theme(--color-amber-100 inline);
+  --color-amber-950: --theme(--color-amber-50 inline);
+
+  --color-sky-50: --theme(--color-sky-950 inline);
+  --color-sky-100: --theme(--color-sky-900 inline);
+  --color-sky-200: --theme(--color-sky-800 inline);
+  --color-sky-300: --theme(--color-sky-700 inline);
+  --color-sky-400: --theme(--color-sky-600 inline);
+  --color-sky-800: --theme(--color-sky-200 inline);
+  --color-sky-900: --theme(--color-sky-100 inline);
+  --color-sky-950: --theme(--color-sky-50 inline);
+
+  --color-indigo-50: --theme(--color-indigo-950 inline);
+  --color-indigo-100: --theme(--color-indigo-900 inline);
+  --color-indigo-200: --theme(--color-indigo-800 inline);
+  --color-indigo-300: --theme(--color-indigo-700 inline);
+  --color-indigo-400: --theme(--color-indigo-600 inline);
+  --color-indigo-800: --theme(--color-indigo-200 inline);
+  --color-indigo-900: --theme(--color-indigo-100 inline);
+  --color-indigo-950: --theme(--color-indigo-50 inline);
+
+  --color-violet-50: --theme(--color-violet-950 inline);
+  --color-violet-100: --theme(--color-violet-900 inline);
+  --color-violet-200: --theme(--color-violet-800 inline);
+  --color-violet-300: --theme(--color-violet-700 inline);
+  --color-violet-400: --theme(--color-violet-600 inline);
+  --color-violet-800: --theme(--color-violet-200 inline);
+  --color-violet-900: --theme(--color-violet-100 inline);
+  --color-violet-950: --theme(--color-violet-50 inline);
+
+  --color-orange-50: --theme(--color-orange-950 inline);
+  --color-orange-100: --theme(--color-orange-900 inline);
+  --color-orange-200: --theme(--color-orange-800 inline);
+  --color-orange-300: --theme(--color-orange-700 inline);
+  --color-orange-400: --theme(--color-orange-600 inline);
+  --color-orange-800: --theme(--color-orange-200 inline);
+  --color-orange-900: --theme(--color-orange-100 inline);
+  --color-orange-950: --theme(--color-orange-50 inline);
+
+  --color-pink-50: --theme(--color-pink-950 inline);
+  --color-pink-100: --theme(--color-pink-900 inline);
+  --color-pink-200: --theme(--color-pink-800 inline);
+  --color-pink-300: --theme(--color-pink-700 inline);
+  --color-pink-400: --theme(--color-pink-600 inline);
+  --color-pink-800: --theme(--color-pink-200 inline);
+  --color-pink-900: --theme(--color-pink-100 inline);
+  --color-pink-950: --theme(--color-pink-50 inline);
+}
+
+.theme-switching * {
+  transition: none !important;
+}

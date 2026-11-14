@@ -1,0 +1,1358 @@
+{
+  "version": "1.0.0",
+  "workspaceName": "Insurance Core Domain (MongoDB 8)",
+  "schemas": {
+    "policies": {
+      "description": "Core insurance policy document. Documents non-changing structural elements and nested cover/loading codes.",
+      "displayBadgeField": "policyNumber",
+      "idPaths": [
+        "_id",
+        "policyNumber",
+        "covers[].coverId"
+      ],
+      "protectedCodePaths": [
+        "status",
+        "productCode",
+        "covers[].code",
+        "covers[].loadings[].code"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId",
+          "description": "Primary MongoDB document identifier"
+        },
+        "policyNumber": {
+          "type": "string",
+          "description": "Business policy number (e.g., POL-2026-0001)"
+        },
+        "productCode": {
+          "type": "string",
+          "enum": [
+            "MOTOR_COMP",
+            "HOME_SHIELD",
+            "LIFE_TERM"
+          ],
+          "description": "Insurance product line code"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "PENDING",
+            "LAPSED",
+            "CANCELLED"
+          ]
+        },
+        "effectiveDate": {
+          "type": "Date"
+        },
+        "totalPremium": {
+          "type": "Decimal128"
+        },
+        "covers": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "description": "Selected policy coverages",
+          "items": {
+            "coverId": {
+              "type": "string",
+              "description": "Unique cover instance ID referenced by claim_items"
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "COVER_COLLISION",
+                "COVER_THEFT",
+                "COVER_FIRE",
+                "COVER_LIABILITY",
+                "COVER_GLASS"
+              ],
+              "description": "Coverage type code"
+            },
+            "sumInsured": {
+              "type": "Decimal128"
+            },
+            "loadings": {
+              "type": "array",
+              "displayBadgeField": "code",
+              "description": "Risk loadings and surcharges applied to this cover",
+              "items": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "LOAD_YOUNG_DRIVER",
+                    "LOAD_URBAN_ZONE",
+                    "LOAD_HIGH_POWER",
+                    "LOAD_CLAIMS_HISTORY",
+                    "DISC_NO_CLAIM"
+                  ],
+                  "description": "Loading or discount reason code"
+                },
+                "value": {
+                  "type": "Decimal128",
+                  "description": "Percentage or flat loading amount"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "claims": {
+      "description": "Insurance claims linked via soft relation to policies._id",
+      "displayBadgeField": "claimNumber",
+      "idPaths": [
+        "_id",
+        "claimNumber"
+      ],
+      "foreignKeys": {
+        "policyId": "policies._id"
+      },
+      "protectedCodePaths": [
+        "status",
+        "incidentType"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "claimNumber": {
+          "type": "string"
+        },
+        "policyId": {
+          "type": "ObjectId",
+          "description": "Soft foreign key -> policies._id"
+        },
+        "incidentDate": {
+          "type": "Date"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "INVESTIGATING",
+            "APPROVED",
+            "SETTLED",
+            "REJECTED"
+          ]
+        }
+      }
+    },
+    "claim_items": {
+      "description": "Line-item claim payouts linked to claims._id and policies.covers[].coverId",
+      "displayBadgeField": "code",
+      "idPaths": [
+        "_id"
+      ],
+      "foreignKeys": {
+        "claimId": "claims._id",
+        "coverId": "policies.covers[].coverId"
+      },
+      "protectedCodePaths": [
+        "code"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "claimId": {
+          "type": "ObjectId",
+          "description": "Soft foreign key -> claims._id"
+        },
+        "coverId": {
+          "type": "string",
+          "description": "Soft foreign key -> policies.covers[].coverId"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "ITEM_REPAIR",
+            "ITEM_TOWING",
+            "ITEM_MEDICAL",
+            "ITEM_REPLACEMENT"
+          ]
+        },
+        "approvedAmount": {
+          "type": "Decimal128"
+        }
+      }
+    },
+    "persons": {
+      "description": "Natural persons referenced by contractors.persons[].personId and claims2.participants[].personId",
+      "displayBadgeField": "personCode",
+      "idPaths": [
+        "_id",
+        "personCode"
+      ],
+      "protectedCodePaths": [
+        "gender",
+        "nationality",
+        "attributes[].code",
+        "attributes[].valueType",
+        "addresses[].type",
+        "phones[].type"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "personCode": {
+          "type": "string",
+          "description": "Business id PER-000001"
+        },
+        "pesel": {
+          "type": "string"
+        },
+        "firstName": {
+          "type": "string"
+        },
+        "lastName": {
+          "type": "string"
+        },
+        "gender": {
+          "type": "string",
+          "enum": [
+            "F",
+            "M"
+          ]
+        },
+        "birthDate": {
+          "type": "Date"
+        },
+        "nationality": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phones": {
+          "type": "array",
+          "displayBadgeField": "type",
+          "items": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "MOBILE",
+                "WORK"
+              ]
+            },
+            "number": {
+              "type": "string"
+            },
+            "primary": {
+              "type": "boolean"
+            }
+          }
+        },
+        "addresses": {
+          "type": "array",
+          "displayBadgeField": "type",
+          "items": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "HOME",
+                "CORRESPONDENCE",
+                "REGISTERED",
+                "RISK_LOCATION"
+              ]
+            },
+            "street": {
+              "type": "string"
+            },
+            "city": {
+              "type": "string"
+            },
+            "postalCode": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            }
+          }
+        },
+        "attributes": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "description": "Dynamic attributes: value type depends on valueType",
+          "items": {
+            "code": {
+              "type": "string",
+              "description": "Attribute code",
+              "enum": [
+                "SMOKER",
+                "MARITAL_STATUS",
+                "MONTHLY_INCOME",
+                "DRIVING_LICENSE_DATE",
+                "CREDIT_SCORE"
+              ]
+            },
+            "value": {
+              "type": "mixed",
+              "description": "string | Decimal128 | Date, as declared by valueType"
+            },
+            "valueType": {
+              "type": "string",
+              "enum": [
+                "string",
+                "decimal",
+                "date"
+              ]
+            }
+          }
+        },
+        "tags": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "Date"
+        },
+        "updatedAt": {
+          "type": "Date"
+        }
+      }
+    },
+    "contractors": {
+      "description": "Contract parties (PERSON or COMPANY) with roles and linked persons",
+      "displayBadgeField": "contractorCode",
+      "idPaths": [
+        "_id",
+        "contractorCode"
+      ],
+      "foreignKeys": {
+        "personId": "persons._id",
+        "persons[].personId": "persons._id"
+      },
+      "protectedCodePaths": [
+        "type",
+        "status",
+        "roles",
+        "persons[].role",
+        "riskClass",
+        "attributes[].code",
+        "attributes[].valueType"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "contractorCode": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "PERSON",
+            "COMPANY"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "SUSPENDED",
+            "CLOSED"
+          ]
+        },
+        "roles": {
+          "type": "array",
+          "enum": [
+            "POLICYHOLDER",
+            "INSURED",
+            "PAYER",
+            "BENEFICIARY",
+            "BROKER"
+          ],
+          "description": "Roles this contractor may play on policies"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "personId": {
+          "type": "ObjectId",
+          "description": "PERSON contractors: -> persons._id"
+        },
+        "company": {
+          "type": "object",
+          "fields": {
+            "name": {
+              "type": "string"
+            },
+            "legalForm": {
+              "type": "string",
+              "enum": [
+                "SP_ZOO",
+                "SA",
+                "SP_J",
+                "JDG"
+              ]
+            },
+            "nip": {
+              "type": "string"
+            },
+            "regon": {
+              "type": "string"
+            },
+            "krs": {
+              "type": "string"
+            },
+            "pkd": {
+              "type": "string"
+            }
+          }
+        },
+        "persons": {
+          "type": "array",
+          "displayBadgeField": "role",
+          "description": "Linked persons and their role",
+          "items": {
+            "personId": {
+              "type": "ObjectId",
+              "description": "-> persons._id"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "SELF",
+                "REPRESENTATIVE",
+                "BOARD_MEMBER",
+                "CONTACT",
+                "PROXY"
+              ]
+            },
+            "since": {
+              "type": "Date"
+            },
+            "validTo": {
+              "type": "Date"
+            }
+          }
+        },
+        "bankAccounts": {
+          "type": "array",
+          "items": {
+            "iban": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "primary": {
+              "type": "boolean"
+            }
+          }
+        },
+        "riskClass": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "attributes": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "description": "Dynamic attributes: value type depends on valueType",
+          "items": {
+            "code": {
+              "type": "string",
+              "description": "Attribute code",
+              "enum": [
+                "SEGMENT",
+                "ANNUAL_REVENUE",
+                "REGISTRATION_DATE",
+                "KYC_VERIFIED_AT",
+                "RISK_SCORE"
+              ]
+            },
+            "value": {
+              "type": "mixed",
+              "description": "string | Decimal128 | Date, as declared by valueType"
+            },
+            "valueType": {
+              "type": "string",
+              "enum": [
+                "string",
+                "decimal",
+                "date"
+              ]
+            }
+          }
+        },
+        "createdAt": {
+          "type": "Date"
+        }
+      }
+    },
+    "policies2": {
+      "description": "Rich policy model: contractors with roles, insured objects, covers with limits/loadings/dynamic attributes, installments",
+      "displayBadgeField": "policyNumber",
+      "idPaths": [
+        "_id",
+        "policyNumber",
+        "covers[].coverId",
+        "insuredObjects[].objectId"
+      ],
+      "foreignKeys": {
+        "contractors[].contractorId": "contractors._id",
+        "renewalOf": "policies2._id",
+        "covers[].insuredObjectId": "policies2.insuredObjects[].objectId"
+      },
+      "protectedCodePaths": [
+        "productCode",
+        "status",
+        "channel",
+        "contractors[].role",
+        "covers[].code",
+        "covers[].status",
+        "covers[].loadings[].code",
+        "covers[].limits[].code",
+        "covers[].attributes[].code",
+        "attributes[].code"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "policyNumber": {
+          "type": "string"
+        },
+        "productCode": {
+          "type": "string",
+          "enum": [
+            "MOTOR_COMP",
+            "HOME_SHIELD",
+            "LIFE_TERM",
+            "TRAVEL_PLUS"
+          ]
+        },
+        "productVersion": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "AGENT",
+            "BROKER",
+            "ONLINE",
+            "BANCASSURANCE",
+            "CALL_CENTER"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "PENDING",
+            "CANCELLED",
+            "EXPIRED",
+            "LAPSED"
+          ]
+        },
+        "issueDate": {
+          "type": "Date"
+        },
+        "effectiveDate": {
+          "type": "Date"
+        },
+        "expiryDate": {
+          "type": "Date"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "premium": {
+          "type": "object",
+          "fields": {
+            "gross": {
+              "type": "Decimal128"
+            },
+            "net": {
+              "type": "Decimal128"
+            },
+            "tax": {
+              "type": "Decimal128"
+            },
+            "frequency": {
+              "type": "string",
+              "enum": [
+                "ANNUAL",
+                "SEMI_ANNUAL",
+                "QUARTERLY",
+                "MONTHLY"
+              ]
+            },
+            "installments": {
+              "type": "array",
+              "displayBadgeField": "no",
+              "items": {
+                "no": {
+                  "type": "Int32"
+                },
+                "dueDate": {
+                  "type": "Date"
+                },
+                "amount": {
+                  "type": "Decimal128"
+                },
+                "paid": {
+                  "type": "boolean"
+                },
+                "paidAt": {
+                  "type": "Date"
+                }
+              }
+            }
+          }
+        },
+        "contractors": {
+          "type": "array",
+          "displayBadgeField": "role",
+          "description": "Policy parties",
+          "items": {
+            "role": {
+              "type": "string",
+              "enum": [
+                "POLICYHOLDER",
+                "INSURED",
+                "PAYER",
+                "BENEFICIARY",
+                "LOSS_PAYEE"
+              ]
+            },
+            "contractorId": {
+              "type": "ObjectId",
+              "description": "-> contractors._id"
+            },
+            "share": {
+              "type": "Decimal128"
+            }
+          }
+        },
+        "agent": {
+          "type": "object",
+          "fields": {
+            "agentCode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            }
+          }
+        },
+        "insuredObjects": {
+          "type": "array",
+          "displayBadgeField": "type",
+          "items": {
+            "objectId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "VEHICLE",
+                "BUILDING",
+                "PERSON",
+                "TRIP"
+              ]
+            }
+          }
+        },
+        "covers": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "items": {
+            "coverId": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "COVER_OC",
+                "COVER_AC",
+                "COVER_NNW",
+                "COVER_ASSISTANCE",
+                "COVER_GLASS",
+                "COVER_FIRE",
+                "COVER_FLOOD",
+                "COVER_THEFT",
+                "COVER_LIABILITY",
+                "COVER_DEATH",
+                "COVER_DISABILITY",
+                "COVER_HOSPITAL",
+                "COVER_CRITICAL_ILLNESS",
+                "COVER_MEDICAL",
+                "COVER_BAGGAGE",
+                "COVER_CANCELLATION"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "SUSPENDED",
+                "CANCELLED"
+              ]
+            },
+            "insuredObjectId": {
+              "type": "string"
+            },
+            "sumInsured": {
+              "type": "Decimal128"
+            },
+            "deductible": {
+              "type": "object",
+              "fields": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "FIXED",
+                    "PERCENT"
+                  ]
+                },
+                "value": {
+                  "type": "Decimal128"
+                }
+              }
+            },
+            "premium": {
+              "type": "Decimal128"
+            },
+            "startDate": {
+              "type": "Date"
+            },
+            "endDate": {
+              "type": "Date"
+            },
+            "limits": {
+              "type": "array",
+              "displayBadgeField": "code",
+              "items": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "LIMIT_PER_EVENT",
+                    "LIMIT_ANNUAL_AGGREGATE"
+                  ]
+                },
+                "amount": {
+                  "type": "Decimal128"
+                }
+              }
+            },
+            "loadings": {
+              "type": "array",
+              "displayBadgeField": "code",
+              "items": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "LOAD_YOUNG_DRIVER",
+                    "LOAD_URBAN_ZONE",
+                    "LOAD_HIGH_POWER",
+                    "LOAD_CLAIMS_HISTORY",
+                    "DISC_NO_CLAIM",
+                    "DISC_MULTI_POLICY",
+                    "DISC_ONLINE"
+                  ]
+                },
+                "value": {
+                  "type": "Decimal128"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            },
+            "attributes": {
+              "type": "array",
+              "displayBadgeField": "code",
+              "description": "Dynamic attributes: value type depends on valueType",
+              "items": {
+                "code": {
+                  "type": "string",
+                  "description": "Attribute code",
+                  "enum": [
+                    "TARIFF_VERSION",
+                    "PRICED_AT",
+                    "BONUS_MALUS_CLASS",
+                    "GREEN_CARD_VALID_TO",
+                    "REPAIR_VARIANT",
+                    "VEHICLE_VALUE",
+                    "VALUATION_DATE",
+                    "SEATS_COVERED",
+                    "REBUILD_VALUE",
+                    "LAST_INSPECTION_DATE",
+                    "FLOOD_ZONE",
+                    "ALARM_SYSTEM",
+                    "SAFE_VALUE",
+                    "UNDERWRITING_CLASS",
+                    "MEDICAL_EXAM_DATE",
+                    "DAILY_LIMIT"
+                  ]
+                },
+                "value": {
+                  "type": "mixed",
+                  "description": "string | Decimal128 | Date, as declared by valueType"
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "decimal",
+                    "date"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "attributes": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "description": "Dynamic attributes: value type depends on valueType",
+          "items": {
+            "code": {
+              "type": "string",
+              "description": "Attribute code",
+              "enum": [
+                "SALES_CAMPAIGN",
+                "SIGNED_AT",
+                "COMMISSION_RATE",
+                "PREVIOUS_INSURER"
+              ]
+            },
+            "value": {
+              "type": "mixed",
+              "description": "string | Decimal128 | Date, as declared by valueType"
+            },
+            "valueType": {
+              "type": "string",
+              "enum": [
+                "string",
+                "decimal",
+                "date"
+              ]
+            }
+          }
+        },
+        "endorsements": {
+          "type": "array",
+          "displayBadgeField": "type",
+          "items": {
+            "no": {
+              "type": "Int32"
+            },
+            "date": {
+              "type": "Date"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ADDRESS_CHANGE",
+                "SUM_INSURED_CHANGE",
+                "COVER_ADDED",
+                "COVER_REMOVED",
+                "PAYER_CHANGE"
+              ]
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        },
+        "renewalOf": {
+          "type": "ObjectId",
+          "description": "-> policies2._id"
+        },
+        "audit": {
+          "type": "object",
+          "fields": {
+            "createdAt": {
+              "type": "Date"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "Date"
+            },
+            "version": {
+              "type": "Int32"
+            }
+          }
+        }
+      }
+    },
+    "claims2": {
+      "description": "Rich claims: participants, reserves, embedded items with attributes, payments, status history",
+      "displayBadgeField": "claimNumber",
+      "idPaths": [
+        "_id",
+        "claimNumber",
+        "items[].itemId",
+        "payments[].paymentId"
+      ],
+      "foreignKeys": {
+        "policyId": "policies2._id",
+        "coverId": "policies2.covers[].coverId",
+        "participants[].contractorId": "contractors._id",
+        "participants[].personId": "persons._id",
+        "payments[].payeeContractorId": "contractors._id"
+      },
+      "protectedCodePaths": [
+        "status",
+        "lossType",
+        "coverCode",
+        "participants[].role",
+        "items[].code",
+        "items[].status",
+        "statusHistory[].status",
+        "attributes[].code"
+      ],
+      "coreFields": {
+        "_id": {
+          "type": "ObjectId"
+        },
+        "claimNumber": {
+          "type": "string"
+        },
+        "policyId": {
+          "type": "ObjectId",
+          "description": "-> policies2._id"
+        },
+        "policyNumber": {
+          "type": "string"
+        },
+        "coverId": {
+          "type": "string",
+          "description": "-> policies2.covers[].coverId"
+        },
+        "coverCode": {
+          "type": "string"
+        },
+        "lossType": {
+          "type": "string",
+          "enum": [
+            "COLLISION",
+            "THEFT",
+            "GLASS_DAMAGE",
+            "VANDALISM",
+            "HAIL",
+            "FIRE",
+            "FLOOD",
+            "BURGLARY",
+            "PIPE_LEAK",
+            "STORM",
+            "DEATH",
+            "DISABILITY",
+            "HOSPITALIZATION",
+            "CRITICAL_ILLNESS",
+            "MEDICAL_ABROAD",
+            "LOST_BAGGAGE",
+            "TRIP_CANCELLED"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "REPORTED",
+            "REGISTERED",
+            "INVESTIGATING",
+            "APPROVED",
+            "SETTLED",
+            "REJECTED"
+          ]
+        },
+        "incidentDate": {
+          "type": "Date"
+        },
+        "reportedDate": {
+          "type": "Date"
+        },
+        "location": {
+          "type": "object",
+          "fields": {
+            "city": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            },
+            "geo": {
+              "type": "object"
+            }
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "participants": {
+          "type": "array",
+          "displayBadgeField": "role",
+          "items": {
+            "role": {
+              "type": "string",
+              "enum": [
+                "CLAIMANT",
+                "WITNESS",
+                "DRIVER",
+                "INJURED",
+                "PERPETRATOR"
+              ]
+            },
+            "contractorId": {
+              "type": "ObjectId"
+            },
+            "personId": {
+              "type": "ObjectId"
+            }
+          }
+        },
+        "reserves": {
+          "type": "array",
+          "displayBadgeField": "type",
+          "items": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "INDEMNITY",
+                "EXPENSE"
+              ]
+            },
+            "amount": {
+              "type": "Decimal128"
+            },
+            "setAt": {
+              "type": "Date"
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "items": {
+            "itemId": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "ITEM_REPAIR",
+                "ITEM_TOWING",
+                "ITEM_REPLACEMENT",
+                "ITEM_RENTAL_CAR",
+                "ITEM_MEDICAL",
+                "ITEM_EXPERT_FEE",
+                "ITEM_CLEANING",
+                "ITEM_LOST_INCOME"
+              ]
+            },
+            "claimedAmount": {
+              "type": "Decimal128"
+            },
+            "approvedAmount": {
+              "type": "Decimal128"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "attributes": {
+              "type": "array",
+              "displayBadgeField": "code",
+              "description": "Dynamic attributes: value type depends on valueType",
+              "items": {
+                "code": {
+                  "type": "string",
+                  "description": "Attribute code",
+                  "enum": [
+                    "INVOICE_NUMBER",
+                    "INVOICE_DATE",
+                    "VAT_RATE"
+                  ]
+                },
+                "value": {
+                  "type": "mixed",
+                  "description": "string | Decimal128 | Date, as declared by valueType"
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "decimal",
+                    "date"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "payments": {
+          "type": "array",
+          "displayBadgeField": "paymentId",
+          "items": {
+            "paymentId": {
+              "type": "string"
+            },
+            "date": {
+              "type": "Date"
+            },
+            "amount": {
+              "type": "Decimal128"
+            },
+            "payeeContractorId": {
+              "type": "ObjectId"
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "BANK_TRANSFER",
+                "CASH",
+                "WORKSHOP_DIRECT"
+              ]
+            }
+          }
+        },
+        "statusHistory": {
+          "type": "array",
+          "displayBadgeField": "status",
+          "items": {
+            "status": {
+              "type": "string"
+            },
+            "at": {
+              "type": "Date"
+            },
+            "by": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        },
+        "handler": {
+          "type": "object",
+          "fields": {
+            "userId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "team": {
+              "type": "string"
+            }
+          }
+        },
+        "attributes": {
+          "type": "array",
+          "displayBadgeField": "code",
+          "description": "Dynamic attributes: value type depends on valueType",
+          "items": {
+            "code": {
+              "type": "string",
+              "description": "Attribute code",
+              "enum": [
+                "NOTIFICATION_CHANNEL",
+                "FIRST_CONTACT_AT",
+                "FRAUD_SCORE",
+                "POLICE_REPORT_NO"
+              ]
+            },
+            "value": {
+              "type": "mixed",
+              "description": "string | Decimal128 | Date, as declared by valueType"
+            },
+            "valueType": {
+              "type": "string",
+              "enum": [
+                "string",
+                "decimal",
+                "date"
+              ]
+            }
+          }
+        },
+        "totals": {
+          "type": "object",
+          "fields": {
+            "claimed": {
+              "type": "Decimal128"
+            },
+            "approved": {
+              "type": "Decimal128"
+            },
+            "paid": {
+              "type": "Decimal128"
+            }
+          }
+        },
+        "createdAt": {
+          "type": "Date"
+        }
+      }
+    }
+  },
+  "relationBlueprints": [
+    {
+      "id": "policy-claims-hierarchy",
+      "name": "Policy -> Claims -> Claim Items (3-Level)",
+      "rootCollection": "policies",
+      "levels": [
+        {
+          "level": 2,
+          "collection": "claims",
+          "localField": "_id",
+          "foreignField": "policyId",
+          "displayBadgeField": "claimNumber"
+        },
+        {
+          "level": 3,
+          "collection": "claim_items",
+          "parentCollection": "claims",
+          "localField": "_id",
+          "foreignField": "claimId",
+          "displayBadgeField": "code"
+        }
+      ]
+    },
+    {
+      "id": "policies2-parties-claims",
+      "name": "Policies2 -> Contractors -> Persons, Policies2 -> Claims2",
+      "rootCollection": "policies2",
+      "levels": [
+        {
+          "level": 2,
+          "collection": "contractors",
+          "parentCollection": "policies2",
+          "localField": "contractors.contractorId",
+          "foreignField": "_id",
+          "displayBadgeField": "contractorCode"
+        },
+        {
+          "level": 3,
+          "collection": "persons",
+          "parentCollection": "contractors",
+          "localField": "persons.personId",
+          "foreignField": "_id",
+          "displayBadgeField": "personCode"
+        },
+        {
+          "level": 2,
+          "collection": "claims2",
+          "parentCollection": "policies2",
+          "localField": "_id",
+          "foreignField": "policyId",
+          "displayBadgeField": "claimNumber"
+        }
+      ]
+    }
+  ],
+  "queryPresets": [
+    {
+      "id": "active-policies-young-driver",
+      "name": "Active Policies with Young Driver Loading",
+      "collection": "policies",
+      "filter": {
+        "status": "ACTIVE",
+        "covers": {
+          "$elemMatch": {
+            "loadings.code": "LOAD_YOUNG_DRIVER"
+          }
+        }
+      },
+      "projection": {
+        "policyNumber": 1,
+        "productCode": 1,
+        "status": 1,
+        "totalPremium": 1,
+        "covers.coverId": 1,
+        "covers.code": 1,
+        "covers.loadings": 1
+      },
+      "limit": 100,
+      "relationBlueprintId": "policy-claims-hierarchy"
+    },
+    {
+      "id": "open-claims",
+      "name": "Open & Investigating Claims",
+      "collection": "claims",
+      "filter": {
+        "status": {
+          "$in": [
+            "OPEN",
+            "INVESTIGATING"
+          ]
+        }
+      },
+      "projection": {},
+      "limit": 100
+    },
+    {
+      "id": "policies2-ac-with-young-driver",
+      "name": "Policies2: AC cover with young-driver loading",
+      "collection": "policies2",
+      "filter": {
+        "status": "ACTIVE",
+        "covers": {
+          "$elemMatch": {
+            "code": "COVER_AC",
+            "loadings.code": "LOAD_YOUNG_DRIVER"
+          }
+        }
+      },
+      "limit": 100,
+      "relationBlueprintId": "policies2-parties-claims"
+    },
+    {
+      "id": "persons-high-income",
+      "name": "Persons: decimal attribute MONTHLY_INCOME > 15000",
+      "collection": "persons",
+      "filter": {
+        "attributes": {
+          "$elemMatch": {
+            "code": "MONTHLY_INCOME",
+            "value": {
+              "$gt": {
+                "$numberDecimal": "15000"
+              }
+            }
+          }
+        }
+      },
+      "limit": 100
+    }
+  ],
+  "renumberingRules": {
+    "policies": {
+      "policyNumber": {
+        "strategy": "SUFFIX_TIMESTAMP",
+        "prefix": "POL-LOCAL-"
+      },
+      "covers[].coverId": {
+        "strategy": "UUID_SHORT",
+        "prefix": "COV-"
+      }
+    },
+    "claims": {
+      "claimNumber": {
+        "strategy": "SUFFIX_TIMESTAMP",
+        "prefix": "CLM-LOCAL-"
+      }
+    }
+  }
+}
