@@ -1,16 +1,32 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+*.tsbuildinfo
+
+# Electron / desktop packaging output (installers are published on GitHub Releases, never committed)
+desktop/release/
+*.dmg
+*.blockmap
+*.exe
+*.AppImage
+*.deb
+*.zip
+*.app/
+*.asar
+
+# Logs & env
 *.log
-.DS_Store
 .env
 .env.*
 !.env.example
-*.tsbuildinfo
 
-# Electron build leftovers (installers themselves go to GitHub Releases, not git)
-desktop/release/mac-arm64/
-desktop/release/mac/
-desktop/release/win-unpacked/
-desktop/release/linux-unpacked/
-desktop/release/.icon-*/
-desktop/release/builder-debug.yml
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local Claude Code settings
+.claude/settings.local.json
