@@ -4,6 +4,7 @@ import type { DistinctScan } from './DistinctPopover';
 import { DocTree } from './DocTree';
 import { Grid, rootSource, type GridRow, type TableSource } from './Grid';
 import { sectionId, sectionsFor, type Section } from './MasterDetailView';
+import { useViewPrefsStore } from '../store/useViewPrefsStore';
 import { Dropdown } from './ui';
 import { CodeBadge } from './values';
 
@@ -152,7 +153,10 @@ export function NestedTableView({
   const kinds = useMemo(() => sectionKinds(rows, source, schemas, levels), [rows, source, schemas, levels]);
   const [active, setActive] = useState<number | null>(null);
   // Bumping the key re-mounts the grid with every row folded / unfolded.
-  const [unfoldAll, setUnfoldAll] = useState(docs.length <= 20);
+  // Unfold all / Fold all is remembered for the browser session; until used, small results start unfolded.
+  const unfoldPref = useViewPrefsStore((s) => s.nestedUnfold);
+  const setUnfoldPref = useViewPrefsStore((s) => s.setNestedUnfold);
+  const [unfoldAll, setUnfoldAll] = useState(unfoldPref ?? docs.length <= 20);
   const [json, setJson] = useState(() => readFlag(JSON_FLAG));
   const [generation, setGeneration] = useState(0);
   const visibility = useMemo<Visibility>(() => ({ hidden: new Set(hiddenSections), shown: new Set(shownSections) }), [hiddenSections, shownSections]);
@@ -162,15 +166,42 @@ export function NestedTableView({
 
   const setAll = (open: boolean) => {
     setUnfoldAll(open);
+    setUnfoldPref(open);
     setGeneration((g) => g + 1);
   };
 
-  const setVisible = (k: SectionKind, on: boolean) => {
-    if (k.kind === 'object') {
-      if (!onShownSectionsChange) return;
-      onShownSectionsChange(on ? [...new Set([...shownSections, k.id])] : shownSections.filter((id) => id !== k.id));
-    } else onHiddenSectionsChange(on ? hiddenSections.filter((id) => id !== k.id) : [...new Set([...hiddenSections, k.id])]);
+  /** Switch several sections at once (one store update each for hidden / shown). */
+  const setMany = (list: SectionKind[], on: boolean) => {
+    const objects = new Set(list.filter((k) => k.kind === 'object').map((k) => k.id));
+    const others = new Set(list.filter((k) => k.kind !== 'object').map((k) => k.id));
+    if (others.size) onHiddenSectionsChange(on ? hiddenSections.filter((id) => !others.has(id)) : [...new Set([...hiddenSections, ...others])]);
+    if (objects.size && onShownSectionsChange)
+      onShownSectionsChange(on ? [...new Set([...shownSections, ...objects])] : shownSections.filter((id) => !objects.has(id)));
   };
+  const setVisible = (k: SectionKind, on: boolean) => setMany([k], on);
+
+  /** Every section below `k` (its rows' sections, theirs, …). */
+  const descendants = (k: SectionKind): SectionKind[] => {
+    const out: SectionKind[] = [];
+    const add = (id: string) => {
+      for (const c of kinds) {
+        if (c.parent !== id) continue;
+        out.push(c);
+        add(c.id);
+      }
+    };
+    add(k.id);
+    return out;
+  };
+  /**
+   * Switch a whole group: off = every section in it; on = linked & arrays (objects
+   * stay opt-in one by one, they are noisy). On when nothing in the group is on.
+   */
+  const toggleGroup = (group: SectionKind[]) => {
+    const anyOn = group.some((k) => isVisible(visibility, k.id, k.kind));
+    setMany(anyOn ? group : group.filter((k) => k.kind !== 'object'), !anyOn);
+  };
+  const depths = [...new Set(kinds.map((k) => k.depth))].sort((a, b) => a - b);
 
   /** Shown, and so is every section it lives in. */
   const reachable = (k: SectionKind): boolean => {
@@ -210,11 +241,38 @@ export function NestedTableView({
             </span>
           );
         })}
+        {depths.length > 1 && (
+          <span className="ml-1 inline-flex items-center gap-0.5" title="Switch a whole level on / off">
+            <span className="text-zinc-500">Levels:</span>
+            {depths.map((d) => {
+              const group = kinds.filter((k) => k.depth === d);
+              const onCount = group.filter((k) => isVisible(visibility, k.id, k.kind)).length;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={onCount > 0}
+                  onClick={() => toggleGroup(group)}
+                  title={`Level ${d}: ${onCount} of ${group.length} on — click to switch ${onCount ? 'all off' : 'linked & arrays on'}`}
+                  className={`rounded border px-1.5 py-0.5 font-mono ${
+                    onCount === 0
+                      ? 'border-zinc-700 text-zinc-600 line-through hover:text-zinc-300'
+                      : onCount < group.length
+                        ? 'border-zinc-600 text-zinc-300 hover:bg-zinc-800'
+                        : 'border-zinc-500 bg-zinc-800 text-zinc-100 hover:bg-zinc-700'
+                  }`}
+                >
+                  L{d}
+                </button>
+              );
+            })}
+          </span>
+        )}
         {kinds.length > 0 && (
           <Dropdown
             label={<span>＋ Choose{offCount ? ` (${offCount} off)` : ''}</span>}
             title="Choose the linked collections, arrays and objects shown under every row"
-            width={380}
+            width={440}
           >
             <SectionPicker
               kinds={kinds}
@@ -223,6 +281,8 @@ export function NestedTableView({
               reachable={reachable}
               canShowObjects={!!onShownSectionsChange}
               onToggle={setVisible}
+              descendants={descendants}
+              onToggleGroup={toggleGroup}
               onReset={() => {
                 onHiddenSectionsChange([]);
                 onShownSectionsChange?.([]);
@@ -292,6 +352,8 @@ function SectionPicker({
   reachable,
   canShowObjects,
   onToggle,
+  descendants,
+  onToggleGroup,
   onReset,
 }: {
   kinds: SectionKind[];
@@ -300,6 +362,8 @@ function SectionPicker({
   reachable: (k: SectionKind) => boolean;
   canShowObjects: boolean;
   onToggle: (k: SectionKind, on: boolean) => void;
+  descendants: (k: SectionKind) => SectionKind[];
+  onToggleGroup: (group: SectionKind[]) => void;
   onReset: () => void;
 }) {
   const [filter, setFilter] = useState('');
@@ -334,11 +398,13 @@ function SectionPicker({
           const checked = isVisible(visibility, k.id, k.kind);
           const disabled = k.kind === 'object' && !canShowObjects;
           const ok = reachable(k);
+          const below = descendants(k);
+          const belowOn = below.filter((c) => isVisible(visibility, c.id, c.kind)).length;
           // Inside a linked collection, show the path relative to it.
           return (
-            <li key={k.id}>
+            <li key={k.id} className="flex items-center gap-1">
               <label
-                className={`flex cursor-pointer items-center gap-2 rounded py-0.5 pr-1 hover:bg-zinc-800 ${ok ? '' : 'opacity-50'} ${k.kind === 'relation' ? 'mt-1' : ''}`}
+                className={`flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded py-0.5 pr-1 hover:bg-zinc-800 ${ok ? '' : 'opacity-50'} ${k.kind === 'relation' ? 'mt-1' : ''}`}
                 style={{ paddingLeft: 4 + (k.depth - 2) * 16 }}
                 title={ok ? `${chipLabel(k, root)} — in ${k.count} row${k.count === 1 ? '' : 's'}` : 'Shown only once the section it lives in is on'}
               >
@@ -349,6 +415,20 @@ function SectionPicker({
                   L{k.depth} · {k.count}
                 </span>
               </label>
+              {below.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleGroup(below)}
+                  title={`Everything under ${k.label} (${below.length} section${below.length === 1 ? '' : 's'}, ${belowOn} on): switch ${belowOn ? 'all off' : 'linked & arrays on'}`}
+                  className={`w-14 shrink-0 rounded border px-1 text-center text-[10px] ${
+                    belowOn ? 'border-zinc-600 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-800 text-zinc-600 hover:text-zinc-300'
+                  } ${k.kind === 'relation' ? 'mt-1' : ''}`}
+                >
+                  {belowOn ? 'sub: off' : 'sub: on'}
+                </button>
+              ) : (
+                <span className="w-14 shrink-0" />
+              )}
             </li>
           );
         })}

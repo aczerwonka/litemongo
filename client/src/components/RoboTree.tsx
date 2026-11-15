@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { classify } from '../lib/ejson';
+import { useBadges } from '../store/useViewPrefsStore';
 import { badgeFieldFor } from '../store/useWorkspaceStore';
 import type { CollectionSchema, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
 import { relationBadge } from './Grid';
 import { Dropdown } from './ui';
 import { CodeBadge, Compact, Scalar } from './values';
+
+/** "+N" after a capped row of badges (hidden along with the badges). */
+function BadgeMore({ n }: { n: number }) {
+  return useBadges() ? <span className="text-xs text-zinc-500">+{n}</span> : null;
+}
 
 /**
  * Robo 3T–style tree: one row per document / field in Key · Value · Type
@@ -299,7 +305,7 @@ function pushDoc(
         <span className="inline-flex flex-wrap items-center gap-1 text-zinc-400">
           {list.length} document{list.length === 1 ? '' : 's'}
           {!relOpen && childBadge && list.slice(0, 6).map((n, i) => <CodeBadge key={i} value={n.doc[childBadge]} title={childBadge} />)}
-          {!relOpen && childBadge && list.length > 6 && <span className="text-xs text-zinc-500">+{list.length - 6}</span>}
+          {!relOpen && childBadge && list.length > 6 && <BadgeMore n={list.length - 6} />}
         </span>
       ),
       type: link ? `Link · ${link.foreignField} = ${link.parentCollection ?? collection}.${link.localField}` : 'Link',

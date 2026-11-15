@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ViewMode } from '../store/useTabStore';
+import { BadgesContext, useBadgesOn, useViewPrefsStore } from '../store/useViewPrefsStore';
 import type { CollectionSchema, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
 import type { DistinctScan } from './DistinctPopover';
 import { Grid, rootSource, type GridRow } from './Grid';
@@ -30,9 +31,37 @@ export interface DataViewerProps {
 
 /** Switcher: Flat Table vs Master-Detail panes vs Nested table vs Tree, all over the same result set. */
 export function DataViewer(props: DataViewerProps) {
+  const badges = useBadgesOn(props.viewMode);
   if (props.docs.length === 0) {
     return <div className="p-4 text-sm text-zinc-500">No documents matched.</div>;
   }
+  return (
+    <BadgesContext.Provider value={badges}>
+      <View {...props} />
+    </BadgesContext.Provider>
+  );
+}
+
+/** Show / hide `code` badges in the given view (remembered for the browser session). */
+export function BadgeToggle({ mode }: { mode: ViewMode }) {
+  const on = useBadgesOn(mode);
+  const setBadges = useViewPrefsStore((s) => s.setBadges);
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={() => setBadges(mode, !on)}
+      title={on ? 'Hide [code] badges in this view' : 'Show [code] badges in this view'}
+      className={`rounded border px-2 py-0.5 font-mono text-xs ${
+        on ? 'border-indigo-700 bg-indigo-950 text-indigo-200' : 'border-zinc-700 text-zinc-500 line-through hover:text-zinc-300'
+      }`}
+    >
+      [badges]
+    </button>
+  );
+}
+
+function View(props: DataViewerProps) {
   switch (props.viewMode) {
     case 'tree':
       return <RoboTree {...props} />;

@@ -10,6 +10,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { classify } from '../lib/ejson';
 import { fieldMapAt, orderFields } from '../lib/schema';
 import { useUiStore } from '../store/useUiStore';
+import { useBadges } from '../store/useViewPrefsStore';
 import { badgeFieldFor, useWorkspaceStore, type BadgeTarget } from '../store/useWorkspaceStore';
 import type { CollectionSchema, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
 import { DistinctButton, type DistinctScan } from './DistinctPopover';
@@ -161,6 +162,7 @@ export function Grid({
     if (separated && theadRef.current) setHeadHeight(Math.floor(theadRef.current.getBoundingClientRect().height) - 1);
   });
   const setBadgeField = useWorkspaceStore((s) => s.setBadgeField);
+  const badgesOn = useBadges();
   const openLink = useUiStore((s) => s.openLink);
   const schema = schemas[source.collection];
   const documented = useMemo(() => fieldMapAt(schema, source.arrayPath), [schema, source.arrayPath]);
@@ -231,7 +233,7 @@ export function Grid({
         ),
       });
     }
-    if (showBadge) {
+    if (showBadge && badgesOn) {
       cols.push({
         id: '__badge',
         accessorFn: (r) => (source.badgeField ? r.doc[source.badgeField] : undefined),
@@ -271,7 +273,7 @@ export function Grid({
             <span className="inline-flex items-center gap-1">
               <span className={list.length ? 'text-emerald-400' : 'text-zinc-600'}>{getValue<number>()}</span>
               {field && list.slice(0, 3).map((n, i) => <CodeBadge key={i} value={n.doc[field]} title={`${child}.${field}`} />)}
-              {field && list.length > 3 && <span className="text-xs text-zinc-500">+{list.length - 3}</span>}
+              {badgesOn && field && list.length > 3 && <span className="text-xs text-zinc-500">+{list.length - 3}</span>}
             </span>
           );
         },
@@ -323,6 +325,7 @@ export function Grid({
     onSelectionChange,
     rows,
     showBadge,
+    badgesOn,
     source,
     badgeOptions,
     childCollections,

@@ -7,7 +7,7 @@ import { contextFor, useProfile } from '../store/useConnectionStore';
 import { usePaneSize } from '../store/useLayoutStore';
 import { useTabStore, type QueryTab } from '../store/useTabStore';
 import { useSchemas } from '../store/useWorkspaceStore';
-import { DataViewer } from './DataViewer';
+import { BadgeToggle, DataViewer } from './DataViewer';
 import { focusEditor, JsonEditor } from './JsonEditor';
 import { Splitter } from './Splitter';
 import { Button, inputClass, useServerInfo } from './ui';
@@ -201,6 +201,7 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
             </button>
           ))}
         </div>
+        <BadgeToggle mode={view} />
         {result?.kind === 'docs' && (
           <span className="text-zinc-400">
             {result.label} · {result.docs.length} document{result.docs.length === 1 ? '' : 's'}
@@ -235,7 +236,7 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
         )}
       </div>
 
-      <Splitter sizeKey="script.console" size={consoleHeight} min={60} label="Resize console" />
+      <Splitter sizeKey="script.console" size={consoleHeight} min={60} label="Resize console" below />
       <div className="flex shrink-0 flex-col overflow-hidden rounded border border-zinc-800" style={{ height: consoleHeight }}>
         <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-500">
           <span>Console</span>

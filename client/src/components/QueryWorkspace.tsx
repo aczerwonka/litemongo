@@ -9,7 +9,7 @@ import { useActiveTab, useTabStore, type QueryTab, type ViewMode } from '../stor
 import { useUiStore } from '../store/useUiStore';
 import { useBlueprints, usePresets, useSchemas } from '../store/useWorkspaceStore';
 import type { RelationLevel } from '../types';
-import { DataViewer } from './DataViewer';
+import { BadgeToggle, DataViewer } from './DataViewer';
 import { IndexDrawer } from './IndexDrawer';
 import { useTransferModal } from './ImportExportModal';
 import { focusEditor, JsonEditor } from './JsonEditor';
@@ -295,6 +295,7 @@ function Workspace({ tab }: { tab: QueryTab }) {
             </button>
           ))}
         </div>
+        <BadgeToggle mode={tab.viewMode} />
         {data && (
           <span className="text-zinc-400">
             {data.docs.length} document{data.docs.length === 1 ? '' : 's'}

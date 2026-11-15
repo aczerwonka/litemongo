@@ -3,7 +3,8 @@ import { useLayoutStore } from '../store/useLayoutStore';
 
 /**
  * Drag handle that resizes the pane above it (height in px, persisted under
- * `sizeKey`). Double-click restores the default size. Arrow keys nudge by 16 px.
+ * `sizeKey`) — or the pane below it with `below`, so dragging up grows that pane.
+ * Double-click restores the default size. Arrow keys move the handle by 16 px.
  */
 export function Splitter({
   sizeKey,
@@ -11,16 +12,20 @@ export function Splitter({
   min = 48,
   max = 900,
   label = 'Resize',
+  below = false,
 }: {
   sizeKey: string;
   size: number;
   min?: number;
   max?: number;
   label?: string;
+  /** The resized pane sits below the handle (dragging up makes it taller). */
+  below?: boolean;
 }) {
   const setSize = useLayoutStore((s) => s.setSize);
   const resetSize = useLayoutStore((s) => s.resetSize);
   const drag = useRef<{ y: number; size: number } | null>(null);
+  const dir = below ? -1 : 1;
   const clamp = (px: number) => Math.min(Math.max(px, min), Math.min(max, window.innerHeight - 120));
 
   return (
@@ -42,7 +47,7 @@ export function Splitter({
       }}
       onPointerMove={(e) => {
         if (!drag.current) return;
-        setSize(sizeKey, clamp(drag.current.size + e.clientY - drag.current.y));
+        setSize(sizeKey, clamp(drag.current.size + dir * (e.clientY - drag.current.y)));
       }}
       onPointerUp={(e) => {
         drag.current = null;
@@ -53,7 +58,7 @@ export function Splitter({
       onKeyDown={(e) => {
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
           e.preventDefault();
-          setSize(sizeKey, clamp(size + (e.key === 'ArrowDown' ? 16 : -16)));
+          setSize(sizeKey, clamp(size + dir * (e.key === 'ArrowDown' ? 16 : -16)));
         }
       }}
     >

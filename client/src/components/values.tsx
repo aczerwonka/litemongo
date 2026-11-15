@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { classify, shellText, sortKey, type ValueKind } from '../lib/ejson';
+import { useBadges } from '../store/useViewPrefsStore';
 import { badgeFieldFor } from '../store/useWorkspaceStore';
 import type { CollectionSchema } from '../types';
 
@@ -36,6 +37,7 @@ export function Scalar({ value, typed = true }: { value: unknown; typed?: boolea
 
 /** A domain `code` badge, e.g. [COVER_COLLISION]. */
 export function CodeBadge({ value, title }: { value: unknown; title?: string }) {
+  if (!useBadges()) return null;
   const text = value === undefined ? '∅' : classify(value).text;
   return (
     <span
@@ -48,6 +50,7 @@ export function CodeBadge({ value, title }: { value: unknown; title?: string }) 
 }
 
 export function Badges({ items, field, max = 6 }: { items: unknown[]; field: string; max?: number }) {
+  if (!useBadges()) return null;
   const shown = items.slice(0, max);
   return (
     <span className="inline-flex flex-wrap gap-1 align-middle">
@@ -61,10 +64,11 @@ export function Badges({ items, field, max = 6 }: { items: unknown[]; field: str
 
 /** Compact one-line rendering for table cells and collapsed tree nodes. */
 export function Compact({ value, schema, path }: { value: unknown; schema: CollectionSchema | undefined; path: string[] }) {
+  const badges = useBadges();
   const c = classify(value);
   if (c.kind === 'array') {
     const items = value as unknown[];
-    const badge = badgeFieldFor(schema, path, items[0]);
+    const badge = badges ? badgeFieldFor(schema, path, items[0]) : undefined;
     if (badge && items.length > 0) return <Badges items={items} field={badge} />;
     if (items.length > 0 && items.every((v) => !['object', 'array'].includes(classify(v).kind))) {
       return (
@@ -83,7 +87,7 @@ export function Compact({ value, schema, path }: { value: unknown; schema: Colle
   }
   if (c.kind === 'object') {
     const obj = value as Record<string, unknown>;
-    const badge = badgeFieldFor(schema, path, obj);
+    const badge = badges ? badgeFieldFor(schema, path, obj) : undefined;
     if (badge && obj[badge] !== undefined) return <Badges items={[obj]} field={badge} />;
     const keys = Object.keys(obj);
     return <span className="text-zinc-500">{`{ ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ', …' : ''} }`}</span>;
