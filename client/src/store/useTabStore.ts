@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { EjsonDoc, RelationLevel } from '../types';
+import type { ColumnPrefs, EjsonDoc, RelationLevel } from '../types';
 
 export type ViewMode = 'tree' | 'table' | 'nested' | 'stack';
 
@@ -19,7 +19,10 @@ export interface RunSpec {
   at: number;
 }
 
-export type TabMode = 'query' | 'script';
+export type TabMode = 'query' | 'script' | 'recipe';
+
+/** Presentation of a recipe run. */
+export type RecipeViewMode = 'dossier' | 'board' | 'trace' | 'json';
 
 export interface QueryTab {
   id: string;
@@ -43,7 +46,27 @@ export interface QueryTab {
   hiddenSections?: string[];
   /** Embedded sub-document sections (opt-in) the user switched on in the nested table. */
   shownSections?: string[];
+  /** `code` badges per view mode in this tab; missing = on. */
+  badges?: Partial<Record<ViewMode, boolean>>;
+  /** Nested table: "Unfold all" / "Fold all" last used in this tab; missing = automatic. */
+  nestedUnfold?: boolean | null;
+  /** Nested table: rows without details unfold into their JSON document. */
+  nestedJson?: boolean;
   lastRun: RunSpec | null;
+  /** Saved view this tab was loaded from / saved to. */
+  presetId?: string | null;
+  /** Column order / hidden columns per grid source. */
+  columns?: ColumnPrefs;
+  /** Recipe mode: built-in or saved recipe the editor was loaded from. */
+  recipeId?: string | null;
+  /** Recipe mode: the recipe being edited / run, as JSON text. */
+  recipeText?: string;
+  /** Recipe mode: parameter values as typed. */
+  recipeParams?: Record<string, string>;
+  /** Recipe mode: chosen presentation (missing: the recipe's own view). */
+  recipeView?: RecipeViewMode | null;
+  /** Recipe mode: name shown on the tab. */
+  recipeName?: string;
 }
 
 function blankTab(partial: Partial<QueryTab> = {}): QueryTab {
@@ -134,5 +157,6 @@ export function useActiveTab(): QueryTab {
 
 export function tabTitle(tab: QueryTab): string {
   if (tab.mode === 'script') return tab.db ? `› ${tab.db}` : '› script';
+  if (tab.mode === 'recipe') return `⚗ ${tab.recipeName ?? 'recipe'}`;
   return tab.collection ?? 'New tab';
 }

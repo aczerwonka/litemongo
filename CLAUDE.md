@@ -60,6 +60,15 @@ LiteMongo is a fast, lightweight, web-based MongoDB client and developer workben
 * **Environment tiers:** PROD / CLIENT (red, always read-only, lock cannot be opened), TEST (orange), DEV / LOCAL (green).
 * **Free-query (script) mode:** mongosh-style scripts run in a Web Worker in the browser (`client/src/lib/shell/worker.ts`, sync XHR); the server never evaluates user code, it only executes single operations via `/api/shell/op`.
 
+### A3. Fetch Recipes (Templates) Mode
+* **Recipe tab mode** (`client/src/components/RecipeWorkspace.tsx`): parameterised multi-step fetch plans — built-in templates in `client/src/lib/recipeTemplates.ts`, user recipes saved in `litemongo.config.json` (`recipes`).
+* **Per-step fetch algorithm** (`server/src/db/recipeRunner.ts`, `POST /api/recipe/run`, find() only): `in` (one `$in`), `batched` (`$in` packets of `batchSize`, `concurrency` in flight), `nested-loop` (one query per parent with own sort/limit, `{{parent.path}}` placeholders). `{{param}}` placeholders are filled in raw EJSON before parsing; empty optional params drop their filter key.
+* **Presentations** (`RecipeViews.tsx`): Dossier (card per root with child sections as cards/table/chips), Board (columns by `view.groupBy`), Trace (per-step stats + query waterfall), JSON.
+
+### A4. Saved Views & Column Prefs
+* **Saved views** (`client/src/components/SavedViews.tsx`, stored as `queryPresets` in `litemongo.config.json`): ★ Save view snapshots a tab — query, joins (`levels`), view mode, detail sections (`hiddenSections`/`shownSections`), columns; picking a view opens and runs it.
+* **Column prefs** (`client/src/store/useColumnPrefs.ts`, `ColumnMenu.tsx`): ⚙ in each grid's first header cell shows/hides and reorders columns; header cells drag to reorder. Kept per tab (`columns`, keyed by collection or `collection:array[]`) and saved with a view.
+
 ### B. Multi-Mode Data Visualization & Configurable `code` Badges
 Each query tab toggles seamlessly between three view modes on the same dataset:
 1. **Tree View:** Collapsible, syntax-highlighted JSON/BSON node tree for inspecting deeply nested structures.
@@ -127,12 +136,14 @@ litemongo/
 │   │   ├── db/
 │   │   │   ├── connection.ts       # Stateless TTL-cached MongoClient pool
 │   │   │   ├── batcher.ts          # Master-Detail $in query & stitching engine
+│   │   │   ├── recipeRunner.ts     # Fetch recipes: $in / batched / nested-loop steps + trace
 │   │   │   └── importer.ts         # Two-Pass EJSON graph remapper & paste engine
 │   │   ├── mcp/
 │   │   │   └── mcpServer.ts        # MCP tools (list_schemas, list_relations, query_master_detail)
 │   │   ├── routes/
 │   │   │   ├── query.ts            # Find, projection, distinct values & index list endpoints
 │   │   │   ├── transfer.ts         # EJSON clipboard bundle export, dry-run & paste endpoints
+│   │   │   ├── recipe.ts           # POST /api/recipe/run (read-only)
 │   │   │   └── shell.ts            # Script-mode ops (/api/shell/op): one driver call per db.coll.method(); writes RO-guarded
 │   │   └── middleware/
 │   │       └── readOnly.ts         # Blocks mutations when X-Read-Only or FORCE_READ_ONLY is active

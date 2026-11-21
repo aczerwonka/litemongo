@@ -8,14 +8,16 @@ import { TabBar } from './components/TabBar';
 import { Button, Toaster, useServerInfo } from './components/ui';
 import { useHotkeys, type Hotkeys } from './hooks/useHotkeys';
 import { useActiveTab, useTabStore } from './store/useTabStore';
+import { DEFAULT_PROFILE, useConnectionStore } from './store/useConnectionStore';
+import { defaultDbFromUri } from './lib/api';
 import { nextThemeMode, useResolvedTheme, useThemeStore, type ThemeMode } from './store/useThemeStore';
 import { useUiStore } from './store/useUiStore';
-import { useWorkspaceStore } from './store/useWorkspaceStore';
+import { saveConfigFile, startConfigAutosave, useConfigFile } from './lib/configFile';
+import { toast } from './components/ui';
 
 const THEME_LABEL: Record<ThemeMode, string> = { system: '◐ Auto', light: '☀ Light', dark: '☾ Dark' };
 
 export default function App() {
-  const workspaceName = useWorkspaceStore((s) => s.config.workspaceName);
   const openTransfer = useTransferModal((s) => s.open);
   const openSchema = useUiStore((s) => s.openSchema);
   const setHelpOpen = useUiStore((s) => s.setHelpOpen);
@@ -24,6 +26,28 @@ export default function App() {
   const setThemeMode = useThemeStore((s) => s.setMode);
   const theme = useResolvedTheme();
   const tab = useActiveTab();
+  const configFile = useConfigFile();
+
+  useEffect(() => startConfigAutosave(), []);
+
+  // Dev convenience: tabs without a connection start on the pre-filled local Docker profile.
+  useEffect(() => {
+    const profile = DEFAULT_PROFILE && useConnectionStore.getState().profiles.find((p) => p.id === DEFAULT_PROFILE?.id || p.uri === DEFAULT_PROFILE?.uri);
+    if (!profile) return;
+    const { tabs, updateTab } = useTabStore.getState();
+    for (const t of tabs) {
+      if (!t.connectionId) updateTab(t.id, { connectionId: profile.id, db: t.db ?? defaultDbFromUri(profile.uri) });
+    }
+  }, []);
+
+  const saveConfig = async () => {
+    try {
+      const name = await saveConfigFile();
+      if (name) toast(`Workspace config saved to ${name}`);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  };
 
   useEffect(() => {
     // Swap the palette in one step: no element should animate through the other theme.
@@ -53,6 +77,7 @@ export default function App() {
     'alt+KeyS': () => openSchema(tab.collection),
     'key:?': () => setHelpOpen(true),
     'alt+Slash': () => setHelpOpen(true),
+    'mod+KeyS': () => void saveConfig(),
   };
   for (let n = 1; n <= 9; n++) {
     hotkeys[`alt+Digit${n}`] = () => {
@@ -69,7 +94,6 @@ export default function App() {
         <span className="font-semibold tracking-tight">
           <span className="text-emerald-400">Lite</span>Mongo
         </span>
-        <span className="truncate text-sm text-zinc-500">{workspaceName}</span>
         {server.isError && <span className="text-sm text-red-400">Server unreachable</span>}
         {server.data?.forceReadOnly && (
           <span className="rounded bg-red-900 px-1.5 py-0.5 text-xs text-red-100">Server: FORCE_READ_ONLY</span>
@@ -80,6 +104,20 @@ export default function App() {
           </Button>
           <Button variant="ghost" onClick={() => openTransfer({ mode: 'paste' })}>
             ⇣ Paste data
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => void saveConfig()}
+            title={
+              configFile.error
+                ? `Save failed: ${configFile.error}`
+                : configFile.fileName
+                  ? `${configFile.dirty ? 'Unsaved changes — click to save to' : 'Saved to'} ${configFile.fileName} (Ctrl/Cmd+S)`
+                  : 'Save litemongo.config.json (links, schemas, presets) to a file (Ctrl/Cmd+S)'
+            }
+          >
+            💾 {configFile.fileName ? configFile.fileName : 'Save config'}
+            {configFile.error ? <span className="text-red-400"> !</span> : configFile.dirty || !configFile.fileName ? <span className="text-amber-400"> •</span> : <span className="text-emerald-400"> ✓</span>}
           </Button>
           <Button variant="ghost" onClick={() => openTransfer({ mode: 'config' })}>
             ⚙ Workspace config

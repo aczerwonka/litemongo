@@ -1,6 +1,7 @@
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { copyText, downloadText, readText } from '../lib/clipboard';
+import { fileAccessSupported, openConfigFile, saveConfigFile, unlinkConfigFile, useConfigFile } from '../lib/configFile';
 import { validateConfigText, type ConfigIssue } from '../lib/configValidation';
 import { monaco } from '../lib/monaco';
 import { useResolvedTheme } from '../store/useThemeStore';
@@ -26,6 +27,7 @@ export function ConfigEditor({ onClose }: { onClose: () => void }) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const theme = useResolvedTheme();
+  const linked = useConfigFile((s) => s.fileName);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(text), 250);
@@ -139,6 +141,71 @@ export function ConfigEditor({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex h-full min-h-0 flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2 rounded border border-zinc-800 bg-zinc-900/60 px-2 py-1.5 text-sm">
+          <span className="text-zinc-400">
+            {fileAccessSupported
+              ? linked
+                ? <>Linked file: <span className="font-mono text-zinc-100">{linked}</span> · every change is saved to it automatically</>
+                : 'No file linked: link one and every change (links, schemas, badges…) is saved to it automatically'
+              : 'This browser cannot write files directly: Save downloads litemongo.config.json'}
+          </span>
+          <span className="ml-auto flex gap-2">
+            {fileAccessSupported && (
+              <Button
+                onClick={async () => {
+                  if (dirty && !window.confirm('Discard the unapplied changes in the editor and load a file?')) return;
+                  try {
+                    const name = await openConfigFile();
+                    if (name) {
+                      toast(`Loaded ${name}; changes will be saved to it`);
+                      onClose();
+                    }
+                  } catch (err) {
+                    toast((err as Error).message, 'error');
+                  }
+                }}
+              >
+                📂 Open file…
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (dirty) {
+                  toast('Apply (or revert) the editor changes first', 'error');
+                  return;
+                }
+                try {
+                  const name = await saveConfigFile(!linked);
+                  if (name) toast(`Saved to ${name}`);
+                } catch (err) {
+                  toast((err as Error).message, 'error');
+                }
+              }}
+            >
+              💾 {linked ? `Save to ${linked}` : 'Save to file…'}
+            </Button>
+            {linked && (
+              <>
+                <Button
+                  onClick={async () => {
+                    try {
+                      const name = await saveConfigFile(true);
+                      if (name) toast(`Saved to ${name}`);
+                    } catch (err) {
+                      toast((err as Error).message, 'error');
+                    }
+                  }}
+                >
+                  Save as…
+                </Button>
+                <Button variant="ghost" onClick={() => void unlinkConfigFile()} title="Stop saving to this file">
+                  Unlink
+                </Button>
+              </>
+            )}
+          </span>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             onClick={async () => {

@@ -8,8 +8,13 @@ import {
   ENV_STYLES,
   isLockedEnv,
   newId,
+  isSrvUri,
   parseUri,
+  setUriOption,
+  uriOption,
+  READ_PREFERENCES,
   useConnectionStore,
+  withParamDefaults,
   type ConnectionParams,
   type ConnectionProfile,
   type EnvKind,
@@ -33,7 +38,7 @@ export function ConnectionDialog({
   );
   // New profiles start with the parameter form; existing ones keep the way they were made.
   const [mode, setMode] = useState<Mode>(profile && !profile.params ? 'uri' : 'params');
-  const [params, setParams] = useState<ConnectionParams>(profile?.params ?? DEFAULT_PARAMS);
+  const [params, setParams] = useState<ConnectionParams>(withParamDefaults(profile?.params ?? DEFAULT_PARAMS));
 
   const uri = mode === 'params' ? buildUri(params) : draft.uri.trim();
   const test = useMutation({
@@ -133,7 +138,7 @@ export function ConnectionDialog({
 
         {mode === 'params' ? (
           <div className="grid grid-cols-[1fr_6rem] gap-2">
-            <Field label={params.srv ? 'Host (SRV record)' : 'Host'} hint="Several hosts: comma-separated (host1:27017,host2:27017)">
+            <Field label={params.srv ? 'Host (SRV record)' : 'Host(s)'} hint="Replica set members: comma-separated (host1:27017,host2:27017,host3:27017)">
               <input
                 className={`${inputClass} font-mono`}
                 value={params.host}
@@ -192,16 +197,72 @@ export function ConnectionDialog({
                 />
               </Field>
             </div>
-            <div className="col-span-2 flex gap-4 text-sm">
+            <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-sm whitespace-nowrap">
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={params.srv} onChange={(e) => setParam('srv', e.target.checked)} />
                 SRV (mongodb+srv, Atlas)
+              </label>
+              <label
+                className={`flex items-center gap-2 ${params.srv ? 'text-zinc-500' : ''}`}
+                title="directConnection=true: talk to this one host only, without replica set discovery (e.g. an SSH tunnel or port-forward to one member). Not allowed with SRV."
+              >
+                <input
+                  type="checkbox"
+                  checked={params.directConnection === 'true' && !params.srv}
+                  disabled={params.srv}
+                  onChange={(e) => setParam('directConnection', e.target.checked ? 'true' : '')}
+                />
+                Direct connection
               </label>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={params.tls || params.srv} disabled={params.srv} onChange={(e) => setParam('tls', e.target.checked)} />
                 TLS
               </label>
+              <label className={`flex items-center gap-2 ${params.tls || params.srv ? '' : 'text-zinc-500'}`}>
+                <input
+                  type="checkbox"
+                  checked={params.tlsAllowInvalidCertificates}
+                  disabled={!params.tls && !params.srv}
+                  onChange={(e) => setParam('tlsAllowInvalidCertificates', e.target.checked)}
+                />
+                Allow invalid certificates
+              </label>
             </div>
+            <fieldset className="col-span-2 grid grid-cols-2 gap-2 rounded border border-zinc-800 p-2">
+              <legend className="px-1 text-xs text-zinc-500">Replica set &amp; topology</legend>
+              <Field label="Replica set name" hint="replicaSet= (e.g. rs0); leave empty for standalone">
+                <input
+                  className={`${inputClass} font-mono`}
+                  value={params.replicaSet}
+                  spellCheck={false}
+                  placeholder="rs0"
+                  onChange={(e) => setParam('replicaSet', e.target.value)}
+                />
+              </Field>
+              <Field label="Read preference">
+                <select
+                  className={inputClass}
+                  value={params.readPreference}
+                  onChange={(e) => setParam('readPreference', e.target.value as ConnectionParams['readPreference'])}
+                >
+                  <option value="">Default (primary)</option>
+                  {READ_PREFERENCES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Other options" hint="key=value&key2=value2">
+                <input
+                  className={`${inputClass} font-mono`}
+                  value={params.options}
+                  spellCheck={false}
+                  placeholder="retryWrites=false&appName=litemongo"
+                  onChange={(e) => setParam('options', e.target.value)}
+                />
+              </Field>
+            </fieldset>
             <div className="col-span-2 truncate rounded bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-500" title="Resulting connection string">
               {maskUri(uri)}
             </div>
@@ -223,6 +284,21 @@ export function ConnectionDialog({
                 test.reset();
               }}
             />
+            <label
+              className={`mt-1.5 flex items-center gap-2 text-sm ${isSrvUri(draft.uri) ? 'text-zinc-500' : ''}`}
+              title="Adds / removes directConnection=true in the connection string. Not allowed with mongodb+srv."
+            >
+              <input
+                type="checkbox"
+                checked={uriOption(draft.uri, 'directConnection') === 'true'}
+                disabled={isSrvUri(draft.uri)}
+                onChange={(e) => {
+                  setDraft({ ...draft, uri: setUriOption(draft.uri, 'directConnection', e.target.checked ? 'true' : null) });
+                  test.reset();
+                }}
+              />
+              Direct connection (directConnection=true)
+            </label>
           </Field>
         )}
 

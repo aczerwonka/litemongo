@@ -4,7 +4,6 @@ import type { DistinctScan } from './DistinctPopover';
 import { DocTree } from './DocTree';
 import { Grid, rootSource, type GridRow, type TableSource } from './Grid';
 import { sectionId, sectionsFor, type Section } from './MasterDetailView';
-import { useViewPrefsStore } from '../store/useViewPrefsStore';
 import { Dropdown } from './ui';
 import { CodeBadge } from './values';
 
@@ -15,8 +14,8 @@ import { CodeBadge } from './values';
  * details again. Everything shown was already fetched by the batched $in engine.
  *
  * Linked collections (⛓, green, indented), embedded arrays (▤, blue) and
- * embedded objects (◇, violet) are styled apart. "Show" lists what is on as
- * chips (× switches one off); the picker switches any of them on or off.
+ * embedded objects (◇, violet) are styled apart. The "Details" picker
+ * switches any of them on or off; Levels switch a whole level.
  */
 
 const MAX_DEPTH = 4;
@@ -73,6 +72,10 @@ export interface NestedTableViewProps {
   onHiddenSectionsChange: (hidden: string[]) => void;
   shownSections?: string[];
   onShownSectionsChange?: (shown: string[]) => void;
+  nestedUnfold?: boolean | null;
+  onNestedUnfoldChange?: (open: boolean) => void;
+  nestedJson?: boolean;
+  onNestedJsonChange?: (on: boolean) => void;
 }
 
 interface SectionKind {
@@ -102,9 +105,9 @@ interface UnfoldOpts {
   all: boolean;
 }
 
-/** Does this row have at least one detail section that is switched on? */
+/** Does this row have at least one switched-on detail section with something in it? */
 function hasDetails(row: GridRow, source: TableSource, schemas: Record<string, CollectionSchema>, levels: RelationLevel[], v: Visibility): boolean {
-  return sectionsFor(row, source, schemas, levels, { objects: true }).some((s) => isVisible(v, sectionId(s), s.kind));
+  return sectionsFor(row, source, schemas, levels, { objects: true }).some((s) => s.rows.length > 0 && isVisible(v, sectionId(s), s.kind));
 }
 
 /** Every kind of detail section present in the result, parents before their children. */
@@ -147,17 +150,21 @@ export function NestedTableView({
   onHiddenSectionsChange,
   shownSections = [],
   onShownSectionsChange,
+  nestedUnfold = null,
+  onNestedUnfoldChange,
+  nestedJson = false,
+  onNestedJsonChange,
 }: NestedTableViewProps) {
   const rows = useMemo<GridRow[]>(() => docs.map((doc, index) => ({ index, doc, node: nodes?.[index] })), [docs, nodes]);
   const source = useMemo(() => rootSource(collection, schemas, docs[0]), [collection, schemas, docs]);
   const kinds = useMemo(() => sectionKinds(rows, source, schemas, levels), [rows, source, schemas, levels]);
   const [active, setActive] = useState<number | null>(null);
   // Bumping the key re-mounts the grid with every row folded / unfolded.
-  // Unfold all / Fold all is remembered for the browser session; until used, small results start unfolded.
-  const unfoldPref = useViewPrefsStore((s) => s.nestedUnfold);
-  const setUnfoldPref = useViewPrefsStore((s) => s.setNestedUnfold);
-  const [unfoldAll, setUnfoldAll] = useState(unfoldPref ?? docs.length <= 20);
-  const [json, setJson] = useState(() => readFlag(JSON_FLAG));
+  // Unfold all / Fold all is remembered per tab; until used, small results start unfolded.
+  const [unfoldAll, setUnfoldAll] = useState(nestedUnfold ?? docs.length <= 20);
+  const [jsonLocal, setJsonLocal] = useState(nestedJson);
+  const json = onNestedJsonChange ? nestedJson : jsonLocal;
+  const setJson = onNestedJsonChange ?? setJsonLocal;
   const [generation, setGeneration] = useState(0);
   const visibility = useMemo<Visibility>(() => ({ hidden: new Set(hiddenSections), shown: new Set(shownSections) }), [hiddenSections, shownSections]);
   const byId = useMemo(() => new Map(kinds.map((k) => [k.id, k])), [kinds]);
@@ -166,7 +173,7 @@ export function NestedTableView({
 
   const setAll = (open: boolean) => {
     setUnfoldAll(open);
-    setUnfoldPref(open);
+    onNestedUnfoldChange?.(open);
     setGeneration((g) => g + 1);
   };
 
@@ -211,36 +218,11 @@ export function NestedTableView({
     return true;
   };
   const on = kinds.filter((k) => isVisible(visibility, k.id, k.kind));
-  const offCount = kinds.length - on.length;
 
   return (
     <div className="flex h-full flex-col">
       <div className="relative z-[32] flex shrink-0 flex-wrap items-center gap-1.5 border-b border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-400">
-        <span title="Details shown under every unfolded row">Show:</span>
-        {kinds.length === 0 && <span className="text-zinc-600">no linked collections, arrays or objects</span>}
-        {on.map((k) => {
-          const style = KIND_STYLE[k.kind];
-          const dim = !reachable(k);
-          return (
-            <span
-              key={k.id}
-              title={`${style.tag} ${k.label} (level ${k.depth}) — present in ${k.count} row${k.count === 1 ? '' : 's'}${dim ? ' · its parent section is off' : ''}`}
-              className={`inline-flex items-center gap-1 rounded border py-0.5 pr-0.5 pl-1.5 font-mono ${style.chipOn} ${dim ? 'opacity-50' : ''}`}
-            >
-              {style.icon} {chipLabel(k, collection)}
-              {k.depth > 2 && <span className="opacity-60">· L{k.depth}</span>}
-              <button
-                type="button"
-                aria-label={`Hide ${k.label}`}
-                title={`Hide ${k.label}`}
-                onClick={() => setVisible(k, false)}
-                className="rounded px-1 opacity-70 hover:bg-zinc-950/60 hover:opacity-100"
-              >
-                ×
-              </button>
-            </span>
-          );
-        })}
+        {kinds.length === 0 && <span className="text-zinc-600">No linked collections, arrays or objects</span>}
         {depths.length > 1 && (
           <span className="ml-1 inline-flex items-center gap-0.5" title="Switch a whole level on / off">
             <span className="text-zinc-500">Levels:</span>
@@ -270,7 +252,7 @@ export function NestedTableView({
         )}
         {kinds.length > 0 && (
           <Dropdown
-            label={<span>＋ Choose{offCount ? ` (${offCount} off)` : ''}</span>}
+            label={<span>☰ Details: {on.length} of {kinds.length} shown</span>}
             title="Choose the linked collections, arrays and objects shown under every row"
             width={440}
           >
@@ -297,10 +279,7 @@ export function NestedTableView({
           <input
             type="checkbox"
             checked={json}
-            onChange={(e) => {
-              setJson(e.target.checked);
-              writeFlag(JSON_FLAG, e.target.checked);
-            }}
+            onChange={(e) => setJson(e.target.checked)}
           />
           {'{ }'} JSON for rows without details
         </label>
@@ -470,7 +449,7 @@ function Details({
       <div className="py-2 pl-8 font-mono text-[13px] leading-6">
         {hiddenCount > 0 && (
           <div className="mb-1 font-sans text-[11px] text-zinc-600">
-            {hiddenCount} detail section{hiddenCount === 1 ? '' : 's'} off · choose them under “Show”
+            {hiddenCount} detail section{hiddenCount === 1 ? '' : 's'} off · choose them under “Details”
           </div>
         )}
         <DocTree doc={row.doc} node={row.node} collection={source.collection} schemas={source.arrayPath.length ? {} : schemas} defaultOpen />
@@ -571,20 +550,4 @@ function DetailBlock({
         ))}
     </div>
   );
-}
-
-const JSON_FLAG = 'litemongo.nested.jsonFallback';
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-function writeFlag(key: string, on: boolean): void {
-  try {
-    localStorage.setItem(key, on ? '1' : '0');
-  } catch {
-    /* storage blocked: the toggle still works for this session */
-  }
 }

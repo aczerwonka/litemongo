@@ -78,7 +78,7 @@ function isInclusionFlag(v: unknown): boolean {
 }
 
 /** If the projection is inclusion-style, make sure `field` survives it. */
-function ensureProjected(projection: Document | undefined, field: string): Document | undefined {
+export function ensureProjected(projection: Document | undefined, field: string): Document | undefined {
   if (!projection || Object.keys(projection).length === 0) return projection;
   const isInclusion = Object.entries(projection).some(([k, v]) => k !== '_id' && isInclusionFlag(v));
   if (!isInclusion) return projection;

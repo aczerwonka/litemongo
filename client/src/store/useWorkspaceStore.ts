@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import exampleConfig from '../../../litemongo.config.example.json';
-import type { CollectionSchema, QueryPreset, RelationBlueprint, WorkspaceConfig } from '../types';
+import type { CollectionSchema, QueryPreset, Recipe, RelationBlueprint, WorkspaceConfig } from '../types';
 
 /** Portable workspace config (litemongo.config.json): schemas, blueprints, presets, renumbering rules. */
 
@@ -24,7 +24,7 @@ export function parseWorkspaceConfig(text: string): WorkspaceConfig {
   if (parsed.renumberingRules !== undefined && !isRecord(parsed.renumberingRules)) {
     throw new Error('"renumberingRules" must be an object');
   }
-  for (const key of ['relationBlueprints', 'queryPresets'] as const) {
+  for (const key of ['relationBlueprints', 'queryPresets', 'recipes'] as const) {
     if (parsed[key] !== undefined && !Array.isArray(parsed[key])) throw new Error(`"${key}" must be an array`);
   }
   const presets = (parsed.queryPresets ?? []) as unknown[];
@@ -87,6 +87,12 @@ interface WorkspaceState {
   /** Insert or replace a saved relation blueprint (by id). */
   saveBlueprint: (blueprint: RelationBlueprint) => void;
   removeBlueprint: (id: string) => void;
+  /** Insert or replace a saved view / query preset (by id). */
+  savePreset: (preset: QueryPreset) => void;
+  removePreset: (id: string) => void;
+  /** Insert or replace a fetch recipe (by id). */
+  saveRecipe: (recipe: Recipe) => void;
+  removeRecipe: (id: string) => void;
   resetToExample: () => void;
 }
 
@@ -121,6 +127,26 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set((s) => ({
           config: { ...s.config, relationBlueprints: (s.config.relationBlueprints ?? []).filter((b) => b.id !== id) },
         })),
+      savePreset: (preset) =>
+        set((s) => {
+          const list = s.config.queryPresets ?? [];
+          const exists = list.some((p) => p.id === preset.id);
+          return {
+            config: { ...s.config, queryPresets: exists ? list.map((p) => (p.id === preset.id ? preset : p)) : [...list, preset] },
+          };
+        }),
+      removePreset: (id) =>
+        set((s) => ({ config: { ...s.config, queryPresets: (s.config.queryPresets ?? []).filter((p) => p.id !== id) } })),
+      saveRecipe: (recipe) =>
+        set((s) => {
+          const list = s.config.recipes ?? [];
+          const exists = list.some((r) => r.id === recipe.id);
+          return {
+            config: { ...s.config, recipes: exists ? list.map((r) => (r.id === recipe.id ? recipe : r)) : [...list, recipe] },
+          };
+        }),
+      removeRecipe: (id) =>
+        set((s) => ({ config: { ...s.config, recipes: (s.config.recipes ?? []).filter((r) => r.id !== id) } })),
       resetToExample: () => set({ config: EXAMPLE_CONFIG }),
     }),
     { name: 'litemongo.workspace', version: 1, storage: createJSONStorage(() => localStorage) },
@@ -135,6 +161,11 @@ export function useBlueprints(): RelationBlueprint[] {
   return useWorkspaceStore((s) => s.config.relationBlueprints) ?? EMPTY_BLUEPRINTS;
 }
 const EMPTY_BLUEPRINTS: RelationBlueprint[] = [];
+
+export function useRecipes(): Recipe[] {
+  return useWorkspaceStore((s) => s.config.recipes) ?? EMPTY_RECIPES;
+}
+const EMPTY_RECIPES: Recipe[] = [];
 
 export function useSchemas(): Record<string, CollectionSchema> {
   return useWorkspaceStore((s) => s.config.schemas) ?? EMPTY_SCHEMAS;

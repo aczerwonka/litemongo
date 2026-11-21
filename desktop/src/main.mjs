@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, Menu, shell, dialog } from 'electron';
+import { app, BrowserWindow, Menu, session, shell, dialog } from 'electron';
 import { buildApp } from '../../server/src/app.ts';
 
 // A FIXED port keeps the web origin stable: connection profiles live in the
@@ -48,6 +48,10 @@ async function createWindow() {
       void shell.openExternal(url);
     }
   });
+  // The PWA service worker precaches the client and serves it cache-first, so a
+  // rebuilt client would only show up after a second reload. The desktop app
+  // talks to its own local server and needs no offline cache: drop it on start.
+  await session.defaultSession.clearStorageData({ origin, storages: ['serviceworkers', 'cachestorage'] });
   await win.loadURL(origin);
 }
 

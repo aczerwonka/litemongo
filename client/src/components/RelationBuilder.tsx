@@ -105,11 +105,14 @@ function slug(name: string): string {
 
 export function RelationBar({
   tab,
+  active = true,
   profile,
   db,
   onChange,
 }: {
   tab: QueryTab;
+  /** Only the visible tab's bar opens the (global) link editor. */
+  active?: boolean;
   profile: ConnectionProfile | undefined;
   db: string | null;
   /** New link set for the tab (and the saved blueprint it now corresponds to, if any). */
@@ -130,6 +133,29 @@ export function RelationBar({
   const tree = depths(root, levels);
   const suggestions = useMemo(() => suggestionsFor(root, levels, schemas), [root, levels, schemas]);
 
+  /**
+   * Links are remembered automatically: a new set becomes a saved Relation
+   * Blueprint in litemongo.config.json, and later edits update it.
+   */
+  const commit = (next: RelationLevel[], blueprintId: string | null) => {
+    if (next.length === 0) {
+      onChange(next, null);
+      return;
+    }
+    const bound = blueprints.find((b) => b.id === blueprintId && b.rootCollection === root);
+    if (bound) {
+      if (JSON.stringify(bound.levels) !== JSON.stringify(next)) saveBlueprint({ ...bound, levels: next });
+      onChange(next, bound.id);
+      return;
+    }
+    const name = `${root} → ${next.map((l) => l.collection).join(', ')}`;
+    let id = slug(name);
+    while (blueprints.some((b) => b.id === id)) id += '-2';
+    saveBlueprint({ id, name, rootCollection: root, levels: next });
+    onChange(next, id);
+    toast(`Links saved as "${name}"`);
+  };
+
   const addLevel = (s: Suggestion, editIndex?: number) => {
     const level: RelationLevel = {
       level: (tree.get(s.parentCollection) ?? 1) + 1,
@@ -138,22 +164,14 @@ export function RelationBar({
       localField: s.localField,
       foreignField: s.foreignField,
     };
-    onChange(editIndex === undefined ? [...levels, level] : levels.map((l, i) => (i === editIndex ? level : l)), tab.blueprintId);
+    commit(editIndex === undefined ? [...levels, level] : levels.map((l, i) => (i === editIndex ? level : l)), tab.blueprintId);
   };
 
-  const save = () => {
-    if (current) {
-      saveBlueprint({ ...current, levels });
-      toast(`Saved "${current.name ?? current.id}"`);
-      return;
-    }
-    const name = window.prompt('Name for this set of relations', `${root} → ${levels.map((l) => l.collection).join(', ')}`);
-    if (!name) return;
-    let id = slug(name);
-    while (blueprints.some((b) => b.id === id)) id += '-2';
-    saveBlueprint({ id, name, rootCollection: root, levels });
-    onChange(levels, id);
-    toast(`Saved "${name}" to the workspace config`);
+  const rename = () => {
+    if (!current) return;
+    const name = window.prompt('Name for this set of relations', current.name ?? current.id);
+    if (!name?.trim()) return;
+    saveBlueprint({ ...current, name: name.trim() });
   };
 
   return (
@@ -182,7 +200,7 @@ export function RelationBar({
               type="button"
               aria-label={`Remove link to ${lvl.collection}`}
               className="border-l border-emerald-800 px-1 py-0.5 hover:bg-emerald-900"
-              onClick={() => onChange(withoutLevel(levels, i), tab.blueprintId)}
+              onClick={() => commit(withoutLevel(levels, i), tab.blueprintId)}
             >
               ✕
             </button>
@@ -229,10 +247,25 @@ export function RelationBar({
             ))}
           </select>
         )}
-        {levels.length > 0 && (!current || dirty) && (
-          <Button className="px-1.5 py-0.5 text-xs" onClick={save} title="Save these links to the workspace config">
-            {current ? 'Save changes' : 'Save…'}
+        {levels.length > 0 && !current && (
+          <Button className="px-1.5 py-0.5 text-xs" onClick={() => commit(levels, null)} title="Save these links to the workspace config">
+            Save
           </Button>
+        )}
+        {current && dirty && (
+          <Button className="px-1.5 py-0.5 text-xs" onClick={() => commit(levels, current.id)} title="Save these links to the workspace config">
+            Save changes
+          </Button>
+        )}
+        {current && !dirty && (
+          <button
+            type="button"
+            onClick={rename}
+            className="rounded px-1 text-xs text-emerald-400 hover:bg-zinc-800"
+            title={`Saved in the workspace config as "${current.name ?? current.id}" — click to rename`}
+          >
+            ✓ saved
+          </button>
         )}
         {current && (
           <Button
@@ -249,7 +282,7 @@ export function RelationBar({
           </Button>
         )}
       </span>
-      {draft && (
+      {draft && active && (
         <LinkEditor
           draft={draft}
           root={root}

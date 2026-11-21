@@ -3,16 +3,19 @@ import { useHotkeys } from '../hooks/useHotkeys';
 import { useRunResult } from '../hooks/useRunResult';
 import { api, defaultDbFromUri } from '../lib/api';
 import { copyText } from '../lib/clipboard';
-import { parseQueryText, pretty } from '../lib/ejson';
+import { parseQueryText } from '../lib/ejson';
 import { contextFor, useProfile } from '../store/useConnectionStore';
-import { useActiveTab, useTabStore, type QueryTab, type ViewMode } from '../store/useTabStore';
+import { useTabStore, type QueryTab, type ViewMode } from '../store/useTabStore';
+import { badgesOn } from '../store/useViewPrefsStore';
 import { useUiStore } from '../store/useUiStore';
-import { useBlueprints, usePresets, useSchemas } from '../store/useWorkspaceStore';
+import { useSchemas } from '../store/useWorkspaceStore';
 import type { RelationLevel } from '../types';
 import { BadgeToggle, DataViewer } from './DataViewer';
 import { IndexDrawer } from './IndexDrawer';
 import { useTransferModal } from './ImportExportModal';
 import { focusEditor, JsonEditor } from './JsonEditor';
+import { RecipeWorkspace } from './RecipeWorkspace';
+import { SaveViewButton, ViewPicker } from './SavedViews';
 import { RelationBar } from './RelationBuilder';
 import { ModeSwitch, ScriptWorkspace } from './ScriptWorkspace';
 import { Splitter } from './Splitter';
@@ -27,80 +30,63 @@ export interface QueryAssistantProvider {
   suggest(prompt: string, ctx: { db: string; collection: string }): Promise<{ filter?: string; projection?: string; sort?: string }>;
 }
 
+/**
+ * Every tab keeps its own mounted workspace (hidden when inactive), so results,
+ * unfolded rows, selection, scroll and view state stay separate per tab.
+ */
 export function QueryWorkspace() {
-  const tab = useActiveTab();
+  const tabs = useTabStore((s) => s.tabs);
+  const activeId = useTabStore((s) => s.activeId);
+  const shownId = tabs.some((t) => t.id === activeId) ? activeId : tabs[0]?.id;
+  return (
+    <>
+      {tabs.map((t) => (
+        <div key={t.id} className={t.id === shownId ? 'flex min-h-0 flex-1 flex-col' : 'hidden'} aria-hidden={t.id !== shownId}>
+          <TabPane tab={t} active={t.id === shownId} />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function TabPane({ tab, active }: { tab: QueryTab; active: boolean }) {
   const profile = useProfile(tab.connectionId);
 
   if (!profile) {
-    return <Empty>Select or add a connection in the sidebar to start querying.</Empty>;
+    return <Empty tab={tab}>Select or add a connection in the sidebar to start querying.</Empty>;
   }
-  if (tab.mode === 'script') return <ScriptWorkspace key={tab.id} tab={tab} />;
+  if (tab.mode === 'script') return <ScriptWorkspace tab={tab} active={active} />;
+  if (tab.mode === 'recipe') return <RecipeWorkspace tab={tab} active={active} />;
   if (!tab.collection) {
     return (
-      <Empty script>
+      <Empty tab={tab} script>
         Pick a collection on the left, apply a saved query preset, or write a free query.
       </Empty>
     );
   }
-  return <Workspace key={tab.id} tab={tab} />;
+  // Re-mounted when the tab is pointed at another collection / database.
+  return <Workspace key={`${tab.db}/${tab.collection}`} tab={tab} active={active} />;
 }
 
-function Empty({ children, script = false }: { children: React.ReactNode; script?: boolean }) {
-  const tab = useActiveTab();
+function Empty({ tab, children, script = false }: { tab: QueryTab; children: React.ReactNode; script?: boolean }) {
   const updateTab = useTabStore((s) => s.updateTab);
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 text-sm text-zinc-500">
       <p>{children}</p>
       <div className="flex items-center gap-2">
-        <PresetPicker />
+        <ViewPicker tab={tab} />
         {script && (
           <Button onClick={() => updateTab(tab.id, { mode: 'script' })} title="mongosh-style script: db.policies.find(…), print(…)">
             › Free query (script)
           </Button>
         )}
+        {script && (
+          <Button onClick={() => updateTab(tab.id, { mode: 'recipe' })} title="Ready-made multi-step fetch templates: dossier, board, query trace">
+            ⚗ Recipes
+          </Button>
+        )}
       </div>
     </div>
-  );
-}
-
-/** Saved query presets from litemongo.config.json. */
-function PresetPicker({ tab: given }: { tab?: QueryTab }) {
-  const active = useActiveTab();
-  const tab = given ?? active;
-  const presets = usePresets();
-  const blueprints = useBlueprints();
-  const profile = useProfile(tab.connectionId);
-  const updateTab = useTabStore((s) => s.updateTab);
-  if (presets.length === 0) return null;
-  return (
-    <select
-      aria-label="Saved query presets"
-      className={inputClass}
-      value=""
-      disabled={!profile}
-      onChange={(e) => {
-        const preset = presets.find((p) => p.id === e.target.value);
-        if (!preset) return;
-        updateTab(tab.id, {
-          db: tab.db ?? (profile ? defaultDbFromUri(profile.uri) : null),
-          collection: preset.collection,
-          filter: pretty(preset.filter ?? {}),
-          projection: pretty(preset.projection ?? {}),
-          sort: pretty(preset.sort ?? {}),
-          limit: preset.limit ?? 100,
-          blueprintId: preset.relationBlueprintId ?? null,
-          levels: blueprints.find((b) => b.id === preset.relationBlueprintId)?.levels ?? [],
-          lastRun: null,
-        });
-      }}
-    >
-      <option value="">{profile ? 'Saved presets…' : 'Saved presets (connect first)'}</option>
-      {presets.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name} ({p.collection})
-        </option>
-      ))}
-    </select>
   );
 }
 
@@ -111,7 +97,7 @@ const VIEW_MODES: { mode: ViewMode; label: string; title: string }[] = [
   { mode: 'tree', label: 'Tree', title: 'Robo 3T-style Key / Value / Type tree; linked documents nest one level further right' },
 ];
 
-function Workspace({ tab }: { tab: QueryTab }) {
+function Workspace({ tab, active }: { tab: QueryTab; active: boolean }) {
   const updateTab = useTabStore((s) => s.updateTab);
   const profile = useProfile(tab.connectionId);
   const forceReadOnly = useServerInfo().data?.forceReadOnly ?? false;
@@ -226,7 +212,7 @@ function Workspace({ tab }: { tab: QueryTab }) {
     'alt+KeyP': () => openTransfer({ mode: 'paste' }),
     'alt+KeyF': () => focusEditor(`${tab.id}/filter.json`),
     'alt+KeyG': () => (resultsRef.current?.querySelector<HTMLElement>('[data-grid]') ?? resultsRef.current)?.focus(),
-  });
+  }, active);
 
   // Distinct Inspector "Collection" mode: bounded aggregate over the last run's filter.
   const scanDistinct = useCallback(
@@ -245,7 +231,7 @@ function Workspace({ tab }: { tab: QueryTab }) {
         <span className="font-mono text-sm text-zinc-300">
           {tab.db}.<span className="text-zinc-50">{tab.collection}</span>
         </span>
-        <PresetPicker tab={tab} />
+        <ViewPicker tab={tab} />
         <label className="flex items-center gap-1 text-sm text-zinc-400">
           Limit
           <input
@@ -263,6 +249,7 @@ function Workspace({ tab }: { tab: QueryTab }) {
         <Button onClick={() => setShowIndexes(true)} disabled={!indexDb} title="Collection indexes (Alt+I)">
           ⚿ Indexes
         </Button>
+        <SaveViewButton tab={tab} />
         <Button variant="primary" onClick={() => run()} disabled={result.isFetching} title="Run (Ctrl/Cmd+Enter)">
           {result.isFetching ? 'Running…' : '▶ Run'}
         </Button>
@@ -275,7 +262,7 @@ function Workspace({ tab }: { tab: QueryTab }) {
       </div>
       <Splitter sizeKey="query.editors" size={editorsHeight} min={64} label="Resize query editors" />
 
-      <RelationBar tab={tab} profile={profile} db={indexDb} onChange={changeLinks} />
+      <RelationBar tab={tab} active={active} profile={profile} db={indexDb} onChange={changeLinks} />
 
       {parseError && <ErrorBox error={parseError} />}
       {result.isError && <ErrorBox error={result.error} />}
@@ -295,7 +282,10 @@ function Workspace({ tab }: { tab: QueryTab }) {
             </button>
           ))}
         </div>
-        <BadgeToggle mode={tab.viewMode} />
+        <BadgeToggle
+          on={badgesOn(tab, tab.viewMode)}
+          onChange={(on) => set({ badges: { ...tab.badges, [tab.viewMode]: on } })}
+        />
         {data && (
           <span className="text-zinc-400">
             {data.docs.length} document{data.docs.length === 1 ? '' : 's'}
@@ -334,6 +324,13 @@ function Workspace({ tab }: { tab: QueryTab }) {
             onHiddenSectionsChange={(hiddenSections) => set({ hiddenSections })}
             shownSections={tab.shownSections ?? []}
             onShownSectionsChange={(shownSections) => set({ shownSections })}
+            badges={badgesOn(tab, tab.viewMode)}
+            nestedUnfold={tab.nestedUnfold ?? null}
+            onNestedUnfoldChange={(nestedUnfold) => set({ nestedUnfold })}
+            nestedJson={tab.nestedJson ?? false}
+            onNestedJsonChange={(nestedJson) => set({ nestedJson })}
+            columns={tab.columns ?? {}}
+            onColumnsChange={(columns) => set({ columns })}
           />
         )}
       </div>

@@ -6,15 +6,17 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { classify } from '../lib/ejson';
 import { fieldMapAt, orderFields } from '../lib/schema';
+import { arrangeColumns, columnsKey, moveColumn, useColumnsControl } from '../store/useColumnPrefs';
 import { useUiStore } from '../store/useUiStore';
 import { useBadges } from '../store/useViewPrefsStore';
 import { badgeFieldFor, useWorkspaceStore, type BadgeTarget } from '../store/useWorkspaceStore';
 import type { CollectionSchema, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
 import { DistinctButton, type DistinctScan } from './DistinctPopover';
 import { DocTree } from './DocTree';
+import { ColumnMenu } from './ColumnMenu';
 import { CodeBadge, Compact, compareEjson } from './values';
 
 /**
@@ -123,6 +125,9 @@ export interface GridProps {
 
 const PAGE = 10;
 
+/** Header column being dragged (one at a time across all grids); drops only land in the same grid. */
+let dragging: { key: string; id: string } | null = null;
+
 export function Grid({
   rows,
   source,
@@ -168,11 +173,15 @@ export function Grid({
   const documented = useMemo(() => fieldMapAt(schema, source.arrayPath), [schema, source.arrayPath]);
   const docs = useMemo(() => rows.map((r) => r.doc), [rows]);
   const selectable = !!selection && !!onSelectionChange;
+  const columnsControl = useColumnsControl();
+  const prefKey = columnsKey(source.collection, source.display ?? (source.arrayPath.length ? `${source.arrayPath.join('[].')}[]` : ''));
+  const pref = columnsControl?.prefs[prefKey];
+  const [dragOver, setDragOver] = useState<string | null>(null);
 
   // Re-applied when the rows change or unfold-all is switched, not on every new callback.
   useEffect(() => setExpanded(allIndexes()), [rows, !!defaultExpanded]);
 
-  const { fields, badgeOptions, childCollections } = useMemo(() => {
+  const { columnIds, allColumns, badgeOptions } = useMemo(() => {
     const observed: string[] = [];
     const seen = new Set<string>();
     const scalarish = new Set<string>();
@@ -187,12 +196,18 @@ export function Grid({
       }
     }
     const ordered = orderFields(observed, documented);
+    const childCollections = [...new Set(rows.flatMap((r) => Object.keys(r.node?.children ?? {})))];
+    // Natural order: linked-collection columns, then fields (schema first). The tab's prefs reorder / hide.
+    const natural = [...childCollections.map((c) => `__child_${c}`), ...ordered];
+    const arranged = arrangeColumns(natural, pref);
+    let fieldCount = 0;
+    const visible = arranged.visible.filter((id) => id.startsWith('__child_') || ++fieldCount <= maxColumns);
     return {
-      fields: ordered.slice(0, maxColumns),
+      columnIds: visible,
+      allColumns: arranged.ordered,
       badgeOptions: ordered.filter((k) => scalarish.has(k)),
-      childCollections: [...new Set(rows.flatMap((r) => Object.keys(r.node?.children ?? {})))],
     };
-  }, [docs, rows, documented, maxColumns]);
+  }, [docs, rows, documented, maxColumns, pref]);
 
   const toggleSelected = (index: number) => {
     if (!selection || !onSelectionChange) return;
@@ -261,7 +276,7 @@ export function Grid({
         },
       });
     }
-    for (const child of childCollections) {
+    const pushChild = (child: string) => {
       cols.push({
         id: `__child_${child}`,
         header: `⛓ ${child}`,
@@ -278,8 +293,8 @@ export function Grid({
           );
         },
       });
-    }
-    for (const field of fields) {
+    };
+    const pushField = (field: string) => {
       const def = documented?.[field];
       const path = [...source.arrayPath, field].join('.');
       const hint = def
@@ -318,6 +333,10 @@ export function Grid({
           );
         },
       });
+    };
+    for (const id of columnIds) {
+      if (id.startsWith('__child_')) pushChild(id.slice('__child_'.length));
+      else pushField(id);
     }
     return cols;
   }, [
@@ -328,8 +347,8 @@ export function Grid({
     badgesOn,
     source,
     badgeOptions,
-    childCollections,
-    fields,
+    columnIds,
+    allColumns,
     docs,
     schema,
     schemas,
@@ -358,7 +377,7 @@ export function Grid({
 
   const toggleExpanded = (index: number) => {
     const row = rows.find((r) => r.index === index);
-    if (canExpand && row && !canExpand(row) && !expanded.has(index)) return;
+    if (canExpand && row && !canExpand(row)) return;
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
@@ -448,21 +467,61 @@ export function Grid({
         <thead ref={theadRef}>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
-              {hg.headers.map((h) => (
+              {hg.headers.map((h, hi) => {
+                const movable = !!columnsControl && (!h.id.startsWith('__') || h.id.startsWith('__child_'));
+                const dnd = movable && columnsControl
+                  ? {
+                      draggable: true,
+                      onDragStart: (e: DragEvent) => {
+                        dragging = { key: prefKey, id: h.id };
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', h.id);
+                      },
+                      onDragOver: (e: DragEvent) => {
+                        if (dragging?.key !== prefKey || dragging.id === h.id) return;
+                        e.preventDefault();
+                        setDragOver(h.id);
+                      },
+                      onDragLeave: () => setDragOver((v) => (v === h.id ? null : v)),
+                      onDrop: (e: DragEvent) => {
+                        e.preventDefault();
+                        setDragOver(null);
+                        if (dragging?.key !== prefKey || dragging.id === h.id) return;
+                        columnsControl.set(prefKey, { ...pref, order: moveColumn(allColumns, dragging.id, h.id) });
+                        dragging = null;
+                      },
+                      onDragEnd: () => {
+                        dragging = null;
+                        setDragOver(null);
+                      },
+                    }
+                  : {};
+                return (
                 <th
                   key={h.id}
+                  {...dnd}
+                  title={movable ? 'Drag to move this column' : undefined}
                   onClick={h.column.getToggleSortingHandler()}
                   // Sticky on each <th>, not on <thead>: Safari draws a sticky <thead> offset and ignores its z-index,
                   // letting scrolled rows show above / through the header. The bottom rule is an inset shadow because
                   // borders don't travel with sticky cells. z: above the master grid's sticky rows (z-20).
                   className={`bg-zinc-900 px-2 py-1.5 text-left font-semibold whitespace-nowrap text-zinc-300 shadow-[inset_0_-1px_0_var(--color-zinc-800)] ${
                     stickyHeader ? `sticky top-0 ${separated ? 'z-30' : 'z-10'}` : ''
-                  } ${h.column.getCanSort() ? 'cursor-pointer select-none hover:text-zinc-50' : ''}`}
+                  } ${h.column.getCanSort() ? 'cursor-pointer select-none hover:text-zinc-50' : ''} ${
+                    dragOver === h.id ? 'shadow-[inset_2px_0_0_var(--color-emerald-500),inset_0_-1px_0_var(--color-zinc-800)]' : ''
+                  }`}
                 >
+                  {hi === 0 && columnsControl ? (
+                    // Column chooser in the first header cell; rendered here (not in the column def) so it keeps its state.
+                    <span className="mr-1 inline-flex align-middle">
+                      <ColumnMenu columns={allColumns} hidden={new Set(pref?.hidden ?? [])} onChange={(next) => columnsControl.set(prefKey, next)} />
+                    </span>
+                  ) : null}
                   {flexRender(h.column.columnDef.header, h.getContext())}
                   {{ asc: ' ▲', desc: ' ▼' }[h.column.getIsSorted() as string] ?? ''}
                 </th>
-              ))}
+                );
+              })}
             </tr>
           ))}
         </thead>
@@ -471,8 +530,9 @@ export function Grid({
             const index = row.original.index;
             const isActive = index === active;
             const isSelected = selection?.has(index) ?? false;
-            const isOpen = inlineTree && expanded.has(index);
-            const expandable = inlineTree && (!canExpand || canExpand(row.original) || isOpen);
+            // A row that has nothing (left) to unfold never shows an open, empty body.
+            const expandable = inlineTree && (!canExpand || canExpand(row.original));
+            const isOpen = expandable && expanded.has(index);
             return (
               <BodyGroup key={row.id} on={separated}>
                 <tr

@@ -6,12 +6,36 @@ import type {
   RenumberingRules,
   WorkspaceConfig as ServerWorkspaceConfig,
 } from '../../server/src/lib/config';
+import type {
+  Recipe,
+  RecipeParam,
+  RecipeStep,
+  RecipeStepDisplay,
+  RecipeStrategy,
+  RecipeView,
+} from '../../server/src/lib/recipe';
+
+export type { Recipe, RecipeParam, RecipeStep, RecipeStepDisplay, RecipeStrategy, RecipeView };
 
 export type { CollectionSchema, RelationBlueprint, RelationLevel, RenumberingRules };
 
 /** Canonical Extended JSON document as returned by the API (plain JSON). */
 export type EjsonDoc = Record<string, unknown>;
 
+/** Columns of one grid source (collection, or embedded array path in it): order and hidden ones. */
+export interface ColumnPref {
+  /** Column ids in display order (fields, `__child_<collection>`); others follow in their natural order. */
+  order?: string[];
+  hidden?: string[];
+}
+
+/** Column prefs keyed by grid source (see `columnsKey`). */
+export type ColumnPrefs = Record<string, ColumnPref>;
+
+/**
+ * Saved query / view ("Saved views"): the query itself plus how it is shown —
+ * joins, detail sections switched on/off, columns and their order.
+ */
 export interface QueryPreset {
   id: string;
   name: string;
@@ -21,6 +45,13 @@ export interface QueryPreset {
   sort?: Record<string, unknown>;
   limit?: number;
   relationBlueprintId?: string;
+  /** Joins (linked collections) saved with the view; wins over relationBlueprintId. */
+  levels?: RelationLevel[];
+  viewMode?: 'tree' | 'table' | 'nested' | 'stack';
+  hiddenSections?: string[];
+  shownSections?: string[];
+  columns?: ColumnPrefs;
+  nestedJson?: boolean;
 }
 
 export interface WorkspaceConfig extends Omit<ServerWorkspaceConfig, 'queryPresets'> {
@@ -66,6 +97,50 @@ export interface RemapSummary {
   }[];
   truncatedLists: boolean;
   warnings: string[];
+}
+
+/** One fetched document of a recipe run, with its children keyed by step id. */
+export interface RecipeNode {
+  step: string;
+  collection: string;
+  doc: EjsonDoc;
+  children: Record<string, RecipeNode[]>;
+}
+
+export interface RecipeStepStats {
+  step: string;
+  collection: string;
+  strategy: RecipeStrategy | 'root';
+  parent: string | null;
+  queries: number;
+  keys: number;
+  docs: number;
+  truncated: boolean;
+  skippedParents: number;
+  ms: number;
+}
+
+export interface RecipeTraceEntry {
+  step: string;
+  collection: string;
+  strategy: RecipeStrategy | 'root';
+  label: string;
+  start: number;
+  ms: number;
+  docs: number;
+  keys?: number;
+}
+
+export interface RecipeRunResponse {
+  db: string;
+  recipeId: string;
+  roots: RecipeNode[];
+  steps: RecipeStepStats[];
+  trace: RecipeTraceEntry[];
+  traceTruncated: boolean;
+  warnings: string[];
+  queries: number;
+  totalMs: number;
 }
 
 export interface PasteResult {

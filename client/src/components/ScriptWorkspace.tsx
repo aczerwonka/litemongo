@@ -8,6 +8,7 @@ import { usePaneSize } from '../store/useLayoutStore';
 import { useTabStore, type QueryTab } from '../store/useTabStore';
 import { useSchemas } from '../store/useWorkspaceStore';
 import { BadgeToggle, DataViewer } from './DataViewer';
+import { badgesOn } from '../store/useViewPrefsStore';
 import { focusEditor, JsonEditor } from './JsonEditor';
 import { Splitter } from './Splitter';
 import { Button, inputClass, useServerInfo } from './ui';
@@ -45,7 +46,7 @@ db.policies2.find({ status: "ACTIVE" }).sort({ issueDate: -1 }).limit(50)
 
 let lineId = 0;
 
-export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
+export function ScriptWorkspace({ tab, active }: { tab: QueryTab; active: boolean }) {
   const updateTab = useTabStore((s) => s.updateTab);
   const profile = useProfile(tab.connectionId);
   const forceReadOnly = useServerInfo().data?.forceReadOnly ?? false;
@@ -54,7 +55,8 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
   const consoleHeight = usePaneSize('script.console', 160);
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const [run, setRun] = useState<RunState>({ running: false, startedAt: null, ms: null, ops: 0, result: null, errorLine: null });
-  const [view, setView] = useState<'table' | 'tree'>(tab.viewMode === 'tree' ? 'tree' : 'table');
+  const view: 'table' | 'tree' = tab.viewMode === 'tree' ? 'tree' : 'table';
+  const setView = (viewMode: 'table' | 'tree') => updateTab(tab.id, { viewMode });
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [now, setNow] = useState(Date.now());
   const workerRef = useRef<Worker | null>(null);
@@ -135,7 +137,7 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
   useHotkeys({
     'mod+Enter': execute,
     'alt+KeyF': () => focusEditor(editorPath),
-  });
+  }, active);
 
   const result = run.result;
   const docs = result?.kind === 'docs' ? result.docs : null;
@@ -201,7 +203,7 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
             </button>
           ))}
         </div>
-        <BadgeToggle mode={view} />
+        <BadgeToggle on={badgesOn(tab, view)} onChange={(on) => updateTab(tab.id, { badges: { ...tab.badges, [view]: on } })} />
         {result?.kind === 'docs' && (
           <span className="text-zinc-400">
             {result.label} · {result.docs.length} document{result.docs.length === 1 ? '' : 's'}
@@ -224,6 +226,7 @@ export function ScriptWorkspace({ tab }: { tab: QueryTab }) {
             onSelectionChange={setSelection}
             hiddenSections={[]}
             onHiddenSectionsChange={() => {}}
+            badges={badgesOn(tab, view)}
           />
         ) : (
           <div className="p-4 text-sm text-zinc-500">
@@ -288,9 +291,9 @@ export function ModeSwitch({ tab }: { tab: QueryTab }) {
     <div className="flex overflow-hidden rounded border border-zinc-700 text-sm" role="group" aria-label="Query mode">
       <button
         type="button"
-        aria-pressed={tab.mode !== 'script'}
+        aria-pressed={tab.mode === 'query'}
         onClick={() => updateTab(tab.id, { mode: 'query' })}
-        className={`px-2.5 py-1 ${tab.mode !== 'script' ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-800'}`}
+        className={`px-2.5 py-1 ${tab.mode === 'query' ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-800'}`}
         title="Filter / projection / sort builder with relations"
       >
         Query
@@ -303,6 +306,15 @@ export function ModeSwitch({ tab }: { tab: QueryTab }) {
         title="Free query: mongosh-style script (db.policies.find(…), print(…))"
       >
         Script
+      </button>
+      <button
+        type="button"
+        aria-pressed={tab.mode === 'recipe'}
+        onClick={() => updateTab(tab.id, { mode: 'recipe' })}
+        className={`px-2.5 py-1 ${tab.mode === 'recipe' ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-400 hover:bg-zinc-800'}`}
+        title="Recipes: ready-made multi-step fetch templates ($in, batched packets, nested loop) with dossier / board / trace views"
+      >
+        Recipe
       </button>
     </div>
   );

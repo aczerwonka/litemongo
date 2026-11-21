@@ -3,6 +3,8 @@ import type {
   LevelStats,
   MasterDetailNode,
   PasteResult,
+  Recipe,
+  RecipeRunResponse,
   RelationBlueprint,
   RemapSummary,
   WorkspaceConfig,
@@ -144,6 +146,10 @@ export const api = {
 
   masterDetail: (conn: ConnectionContext, params: Omit<FindParams, 'collection'> & { blueprint: RelationBlueprint }) =>
     call<MasterDetailResponse>('POST', '/api/query/master-detail', { conn, body: params }),
+
+  /** Run a fetch recipe (multi-step template); read-only. */
+  runRecipe: (conn: ConnectionContext, params: { db: string; recipe: Recipe; params: Record<string, string> }) =>
+    call<RecipeRunResponse>('POST', '/api/recipe/run', { conn, body: params }),
 
   /** Schema sample: first / last N by _id plus N random documents. */
   sample: (conn: ConnectionContext, params: SampleParams) =>

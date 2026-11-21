@@ -3,6 +3,8 @@
 LiteMongo is a lightweight, web-based MongoDB client (an alternative to Compass / Studio 3T). A single Node.js process serves the API (`/api`), the MCP server (`/mcp`) and the compiled React frontend (PWA) on one port.
 
 > Polish version: [docs/DOKUMENTACJA.md](docs/DOKUMENTACJA.md)
+>
+> **Illustrated tutorial** (queries, links, nested table, columns, saved views, fetch recipes, installing the desktop app): open [docs/tutorial/index.html](docs/tutorial/index.html) in a browser.
 
 **Important:** the server is stateless. Connection strings and passwords live only in the browser (localStorage) and are sent with each request in the `X-Mongo-URI` header. The server never writes anything to disk.
 
@@ -272,7 +274,7 @@ npm run desktop:dev         # builds the client + starts the Electron window
 npm run desktop:dist                      # for the current OS
 npm --prefix desktop run dist:mac         # macOS: .dmg + .zip
 npm --prefix desktop run dist:win         # Windows (x64): NSIS installer + portable
-npm --prefix desktop run dist:linux       # Linux: AppImage + .deb
+npm --prefix desktop run dist:linux       # Linux (x64): AppImage + .deb
 ```
 
 Output goes to `desktop/release/`. The installer is about 115 MB.
@@ -299,7 +301,10 @@ Cross-platform build limitations:
 
 - **Fixed port (38017).** Connection profiles live in the window's localStorage, which is scoped to the origin (address). A fixed port keeps them between launches. Change it with `LITEMONGO_DESKTOP_PORT=40000`. If the port is busy, the app picks a random one, but profiles saved under the previous port won't be visible.
 - **Single instance** — launching again focuses the existing window.
-- **No code signing.** Without an Apple Developer certificate macOS shows a Gatekeeper warning (right-click → Open). Windows shows SmartScreen. Signing is configured in `desktop/package.json` → `build` (see the electron-builder docs).
+- **No code signing.** Signing is configured in `desktop/package.json` → `build` (see the electron-builder docs). Until then, the first launch needs one extra step per OS:
+  - **Windows:** SmartScreen shows “Windows protected your PC” → **More info** → **Run anyway**.
+  - **macOS:** after copying the app to Applications, remove the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/LiteMongo.app` (otherwise macOS reports the app as “damaged”). Alternatively System Settings → Privacy & Security → **Open Anyway**.
+  - **Linux:** prefer the `.deb` (`sudo apt install ./litemongo-desktop_<version>_amd64.deb`). For the AppImage: `chmod +x LiteMongo-<version>.AppImage`; it needs FUSE 2 (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`); if Chromium's sandbox is blocked by AppArmor (Ubuntu 23.10+), start it with `--no-sandbox`.
 - External links open in the system browser; the window only loads its own local server.
 - The desktop app keeps the same guarantees as the container: stateless server, passwords only in localStorage. `FORCE_READ_ONLY=true` also works when launched from a terminal.
 

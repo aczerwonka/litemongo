@@ -1,3 +1,5 @@
+import type { Recipe } from './recipe.js';
+
 /**
  * Types for the portable workspace configuration (litemongo.config.json).
  * The server is stateless: the browser sends the parts it needs per request.
@@ -50,6 +52,8 @@ export interface WorkspaceConfig {
   relationBlueprints?: RelationBlueprint[];
   renumberingRules?: RenumberingRules;
   queryPresets?: unknown[];
+  /** Fetch recipes (multi-step templates), see lib/recipe.ts. */
+  recipes?: Recipe[];
 }
 
 const STRATEGIES: readonly RenumberStrategy[] = ['SUFFIX_TIMESTAMP', 'UUID_SHORT', 'KEEP', 'OFFSET'];

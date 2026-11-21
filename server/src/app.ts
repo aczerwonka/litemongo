@@ -9,6 +9,7 @@ import { HttpError } from './lib/http.js';
 import { mcpRoutes } from './mcp/mcpServer.js';
 import { isForceReadOnly } from './middleware/readOnly.js';
 import { queryRoutes } from './routes/query.js';
+import { recipeRoutes } from './routes/recipe.js';
 import { shellRoutes } from './routes/shell.js';
 import { transferRoutes } from './routes/transfer.js';
 
@@ -56,6 +57,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }));
 
   await app.register(queryRoutes);
+  await app.register(recipeRoutes);
   await app.register(transferRoutes);
   await app.register(shellRoutes);
   await app.register(mcpRoutes);

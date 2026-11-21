@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LiteMongo Tutorial</title>
+<meta name="description" content="How to use LiteMongo: connections, queries, linked collections, the nested table, columns, saved views, fetch recipes and script mode.">
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --text: #18181b; --muted: #52525b; --faint: #a1a1aa;
+    --border: #e4e4e7; --accent: #059669; --accent-soft: #ecfdf5; --code-bg: #f4f4f5;
+    --warn-bg: #fffbeb; --warn-border: #f59e0b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #09090b; --panel: #18181b; --text: #f4f4f5; --muted: #a1a1aa; --faint: #71717a;
+      --border: #27272a; --accent: #34d399; --accent-soft: #052e22; --code-bg: #27272a;
+      --warn-bg: #2a1f05; --warn-border: #b45309;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  code, pre, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+  code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); }
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1280px; margin: 0 auto; }
+  nav { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 28px 16px 28px 24px; border-right: 1px solid var(--border); font-size: 14px; }
+  nav .brand { font-weight: 700; font-size: 18px; margin-bottom: 18px; }
+  nav .brand span { color: var(--accent); }
+  nav ol { list-style: none; padding: 0; margin: 0; }
+  nav li { margin: 2px 0; }
+  nav a { color: var(--muted); text-decoration: none; display: block; padding: 3px 8px; border-radius: 6px; }
+  nav a:hover { background: var(--code-bg); color: var(--text); }
+  nav ol ol { padding-left: 12px; font-size: 13px; }
+  main { padding: 32px 40px 80px; min-width: 0; }
+  header.hero h1 { font-size: 34px; margin: 0 0 8px; letter-spacing: -0.02em; }
+  header.hero p { color: var(--muted); max-width: 760px; margin: 0; font-size: 17px; }
+  h2 { font-size: 26px; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); letter-spacing: -0.01em; }
+  h3 { font-size: 19px; margin: 32px 0 8px; }
+  p, ul, ol { max-width: 820px; }
+  li { margin: 4px 0; }
+  figure { margin: 20px 0 28px; }
+  figure img { display: block; width: 100%; max-width: 1100px; height: auto; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.08); }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; max-width: 1100px; }
+  .note { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 6px; max-width: 820px; }
+  .warn { background: var(--warn-bg); border-left: 4px solid var(--warn-border); padding: 10px 14px; border-radius: 6px; max-width: 820px; }
+  table { border-collapse: collapse; margin: 12px 0 20px; font-size: 15px; max-width: 900px; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; max-width: 900px; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--panel); }
+  .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 16px; }
+    main { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav aria-label="Contents">
+  <div class="brand"><span>Lite</span>Mongo tutorial</div>
+  <ol>
+    <li><a href="#start">1. Getting started</a></li>
+    <li><a href="#connect">2. Connections</a></li>
+    <li><a href="#query">3. Querying a collection</a></li>
+    <li><a href="#links">4. Linking collections</a></li>
+    <li><a href="#nested">5. The nested table</a></li>
+    <li><a href="#columns">6. Columns</a></li>
+    <li><a href="#views">7. Saved views</a></li>
+    <li><a href="#recipes">8. Fetch recipes</a>
+      <ol>
+        <li><a href="#recipe-run">Running a template</a></li>
+        <li><a href="#recipe-algorithms">Fetch algorithms</a></li>
+        <li><a href="#recipe-views">Dossier, Board, Trace</a></li>
+        <li><a href="#recipe-own">Writing your own</a></li>
+      </ol>
+    </li>
+    <li><a href="#script">9. Script mode</a></li>
+    <li><a href="#config">10. Workspace config</a></li>
+    <li><a href="#install">11. Installing the desktop app</a>
+      <ol>
+        <li><a href="#install-win">Windows</a></li>
+        <li><a href="#install-mac">macOS</a></li>
+        <li><a href="#install-linux">Linux</a></li>
+      </ol>
+    </li>
+    <li><a href="#keys">12. Keyboard shortcuts</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="hero">
+  <h1>Using LiteMongo</h1>
+  <p>A practical tour of LiteMongo, the lightweight MongoDB client for developers and jump hosts. It covers connecting, querying, linking collections and browsing them in the nested table. It also covers saving views, multi-step fetch recipes and script mode.</p>
+</header>
+
+<h2 id="start">1. Getting started</h2>
+<p>LiteMongo runs in three ways. Each way uses the same user interface.</p>
+<div class="cols">
+  <div class="card"><h4>Desktop app</h4><p>A standalone window for Windows, macOS and Linux with the server built in. See <a href="#install">Installing the desktop app</a>.</p></div>
+  <div class="card"><h4>Docker container</h4><p>A single stateless container for a jump host. Open its port in a browser.</p></div>
+  <div class="card"><h4>From source</h4><p><code>npm run dev</code> starts the API on port 3001 and the UI on <a href="http://localhost:5173">localhost:5173</a>.</p></div>
+</div>
+<p>The repository includes a local MongoDB 8 with insurance sample data, which every screenshot below uses:</p>
+<pre><code>docker compose up -d        # MongoDB 8 on localhost:27017, seeded with sample data
+npm install
+npm run dev                 # or: npm run desktop:dev for the desktop window</code></pre>
+<p class="note">In development and in the desktop app, LiteMongo pre-fills a <strong>Local Docker Dev</strong> connection that points at this database, so you can start querying right away.</p>
+
+<h2 id="connect">2. Connections</h2>
+<p>Connections are listed in the left sidebar. Click <strong>+</strong> next to <em>Connections</em> to add one. You can fill in host, port, credentials and options, or paste a full connection string.</p>
+<figure>
+  <img src="images/02-connection.png" alt="New connection dialog with host, port, username, password, default database and TLS options" loading="lazy">
+  <figcaption>The connection dialog. <em>Test</em> checks the connection before you save it.</figcaption>
+</figure>
+<ul>
+  <li><strong>Environment.</strong> Every profile has an environment: PROD and CLIENT (red), TEST (orange), or DEV and LOCAL (green). The colour shows in the banner above every tab, so you always know where you are.</li>
+  <li><strong>Read-only lock.</strong> The 🔒 button in the banner blocks every write: pasting data, writes from scripts, and document updates and deletes. PROD and CLIENT connections are always read-only.</li>
+  <li><strong>Where profiles live.</strong> Profiles are stored only in your browser or desktop app. The server never stores connection strings.</li>
+</ul>
+
+<h2 id="query">3. Querying a collection</h2>
+<p>Pick a database and a collection in the sidebar. Each tab has three editors, <em>Filter</em>, <em>Projection</em> and <em>Sort</em>, plus a <em>Limit</em>. They use MongoDB's own syntax and offer autocomplete from your documented schema. Press <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> or <strong>▶ Run</strong> to run the query.</p>
+<figure>
+  <img src="images/01-query-table.png" alt="Query workspace showing filter, projection and sort editors above a flat table of policies" loading="lazy">
+  <figcaption>The query workspace with a filter and a sort, showing results in the flat <em>Table</em> view.</figcaption>
+</figure>
+<p>The same results can be shown four ways. Switch between them with the buttons above the results, or press <kbd>Alt</kbd>+<kbd>V</kbd>.</p>
+<table>
+  <tr><th>View</th><th>Best for</th></tr>
+  <tr><td><strong>Table</strong></td><td>Scanning top-level fields. Click a row to unfold its document.</td></tr>
+  <tr><td><strong>Master-detail</strong></td><td>A master grid with panes below it for linked collections and embedded arrays.</td></tr>
+  <tr><td><strong>Nested table</strong></td><td>Rows that unfold in place into the tables of their details. See <a href="#nested">section 5</a>.</td></tr>
+  <tr><td><strong>Tree</strong></td><td>Key / value / type view for deeply nested documents.</td></tr>
+</table>
+<p>Click the small ⊞ icon in any column header to see that field's distinct values and how often each appears. <strong>⚿ Indexes</strong> lists the indexes on the collection.</p>
+
+<h2 id="links">4. Linking collections</h2>
+<p>A <em>link</em> joins another collection to your results, for example <code>policies2._id = claims2.policyId</code>. LiteMongo does not use <code>$lookup</code>. It fetches the root documents, collects their keys and runs <strong>one</strong> <code>$in</code> query per linked collection. This stays fast and safe on production servers.</p>
+<p>The quickest way to add a link is to click one of the dashed suggestions after <em>Links</em>, such as <code>+ claims2 on policyId</code>. LiteMongo suggests links from your schema's documented foreign keys and from field names. For full control, click <strong>+ Link…</strong>:</p>
+<figure>
+  <img src="images/03-link-dialog.png" alt="Link a collection dialog with documented references and from/linked collection fields" loading="lazy">
+  <figcaption>The link dialog. Pick a documented reference, or choose the field on each side yourself. Nested paths such as <code>covers.coverId</code> work too.</figcaption>
+</figure>
+<p>Links can be up to three levels deep, for example policies → claims → claim items. Several collections can hang off the same parent. To reuse a set of links, save it under <em>Saved relations…</em>. To save it together with the rest of the query, use a <a href="#views">saved view</a>.</p>
+
+<h2 id="nested">5. The nested table</h2>
+<p>The <strong>Nested table</strong> view is the richest way to browse related data. Each master row unfolds in place into the tables of its details, and each detail row can unfold again.</p>
+<ul>
+  <li><strong>⛓ Linked collections</strong> (green): documents from linked collections.</li>
+  <li><strong>▤ Embedded arrays</strong> (blue): for example <code>covers[]</code>.</li>
+  <li><strong>◇ Embedded objects</strong> (violet): for example <code>premium</code>. These are off by default.</li>
+</ul>
+<figure>
+  <img src="images/04-nested-table.png" alt="Nested table: a policy row unfolded into its linked claims2 and contractors tables" loading="lazy">
+  <figcaption>A policy with two links. Its claims and contractors appear as tables right under the row.</figcaption>
+</figure>
+<p>Use <strong>☰ Details</strong> to choose which sections appear under every row. The <strong>L2 / L3 / L4</strong> buttons switch a whole level on or off, and <em>sub: off</em> hides everything under one section. <strong>⊞ Unfold all</strong> and <strong>⊟ Fold all</strong> open or close every row.</p>
+<figure>
+  <img src="images/05-details-picker.png" alt="Details picker listing linked collections, embedded arrays and objects with checkboxes and levels" loading="lazy">
+  <figcaption>The Details picker shows every section as a tree, with how many rows contain it.</figcaption>
+</figure>
+<p class="note">The <code>[badges]</code> toggle shows a readable code for each row, such as <code>[POL2-2026-00023]</code> or <code>[TRIP_CANCELLED]</code>. Choose the badge field with the <em>badge:</em> dropdown in any table header. The choice is stored in your workspace schema.</p>
+
+<h2 id="columns">6. Columns</h2>
+<p>Every table, including each nested detail table, has a <strong>⚙</strong> button in its first header cell. It opens the column chooser:</p>
+<ul>
+  <li>Tick or untick columns to show or hide them. <em>all</em>, <em>none</em> and <em>reset</em> act on every column at once.</li>
+  <li>Drag the ⋮⋮ handle, or use the ↑ ↓ buttons, to reorder columns. The filter box helps with wide documents.</li>
+  <li>You can also <strong>drag a column header</strong> straight to a new position in the table.</li>
+</ul>
+<figure>
+  <img src="images/06-column-chooser.png" alt="Column chooser with checkboxes and drag handles over the nested table" loading="lazy">
+  <figcaption>The master table shows only policyNumber, productCode, status, channel, effectiveDate, premium and the two linked collections.</figcaption>
+</figure>
+<p>Column settings are kept per tab, separately for each collection and each embedded array. For example, <code>claims2</code> keeps its own columns wherever it appears. Settings are saved with a <a href="#views">view</a>.</p>
+
+<h2 id="views">7. Saved views</h2>
+<p>Once a tab looks the way you want, click <strong>★ Save view</strong>, type a name and press <kbd>Enter</kbd>. A view saves everything you set up:</p>
+<ul>
+  <li>the collection, filter, projection, sort and limit;</li>
+  <li>the links (joins);</li>
+  <li>the view mode, for example the nested table;</li>
+  <li>which detail sections are switched on;</li>
+  <li>the column order and hidden columns of every table.</li>
+</ul>
+<figure>
+  <img src="images/07-save-view.png" alt="Save view popover with a name field and a summary of what will be saved" loading="lazy">
+  <figcaption>The name is suggested from the collection and its links. The summary shows what the view will contain.</figcaption>
+</figure>
+<p>Open a saved view from <strong>★ Saved views…</strong>. LiteMongo restores the tab and runs the query at once. If the tab came from a view, <em>Save view</em> offers <strong>Update “name”</strong>, <strong>Save as new</strong> and <strong>Delete</strong>. Views are stored in <code>litemongo.config.json</code>, so they travel with your workspace config.</p>
+
+<h2 id="recipes">8. Fetch recipes</h2>
+<p>A <strong>recipe</strong> is a saved, parameterised plan that fetches documents from several collections, one step after another. Each step chooses its own <em>fetch algorithm</em>. Recipes give you ready-made templates and a different way to present results. Switch a tab to <strong>Recipe</strong> with the Query / Script / Recipe switch.</p>
+
+<h3 id="recipe-run">Running a template</h3>
+<p>Choose a template from the ⚗ picker. LiteMongo ships four templates that work on the sample data. You can add your own.</p>
+<figure>
+  <img src="images/11-recipe-picker.png" alt="Recipe picker listing built-in templates: Policy dossier, Claims board, Person 360, Policies claims items" loading="lazy">
+  <figcaption>Built-in templates. Each entry shows the collections it reaches, in order.</figcaption>
+</figure>
+<p>Fill in the parameters and press <strong>▶ Run</strong>. Leave an optional parameter empty to drop its condition from the filter. A row of step chips shows the plan. After a run, each chip shows the number of documents, queries and milliseconds for that step.</p>
+<figure>
+  <img src="images/08-recipe-dossier.png" alt="Policy dossier recipe: parameters, the step pipeline and a dossier card per policy with contractors and latest claims" loading="lazy">
+  <figcaption>The <em>Policy dossier</em> template in the Dossier view. It runs 25 queries for 20 policies, with contractors, their persons and the latest 3 claims of each policy.</figcaption>
+</figure>
+
+<h3 id="recipe-algorithms">Fetch algorithms</h3>
+<table>
+  <tr><th>Algorithm</th><th>What it does</th><th>Use it when</th></tr>
+  <tr><td><code>⇉ $in</code></td><td>One query for all parents: <code>{ foreignField: { $in: [unique parent keys] } }</code>. Results are matched to their parents in memory.</td><td>Most of the time. It is the cheapest option.</td></tr>
+  <tr><td><code>▦ batched</code></td><td>Parent keys are sent in packets of <code>batchSize</code>, with <code>concurrency</code> packets in flight at once.</td><td>There are thousands of keys, or the server is busy. This avoids one huge <code>$in</code>.</td></tr>
+  <tr><td><code>↻ nested loop</code></td><td>One query per parent document, each with its own sort and limit.</td><td>You need the top N per parent, for example <em>the latest 3 claims of every policy</em>, which one <code>$in</code> cannot do.</td></tr>
+</table>
+<p>Click a step chip to tune it without editing JSON. You can change the algorithm, packet size, parallelism, per-parent limit and how its documents are laid out.</p>
+<figure>
+  <img src="images/09-recipe-tuner.png" alt="Step tuner for the Latest 3 claims step: nested loop, parallel 4, per parent 3, layout table" loading="lazy">
+  <figcaption>The step tuner for a nested-loop step.</figcaption>
+</figure>
+<p class="note">Recipes only ever run <code>find()</code>, so they are read-only by design. Each run also has safety limits: at most 2,000 queries, a time limit on every query, and a maximum number of parents in a nested loop.</p>
+
+<h3 id="recipe-views">Dossier, Board, Trace and JSON</h3>
+<ul>
+  <li><strong>Dossier.</strong> One card per root document: a title, a badge and its key fields, followed by a section for each later step. A section can show its documents as cards, a compact table or chips.</li>
+  <li><strong>Board.</strong> Root documents as cards in columns, grouped by any field, such as claim status. Change the grouping field with <em>Columns by</em>.</li>
+  <li><strong>Trace.</strong> A summary per step (queries, keys, documents, time) and a waterfall of every query the algorithm ran. It makes batches running side by side and per-parent loops visible.</li>
+  <li><strong>JSON.</strong> All the fetched data, nested, as Extended JSON.</li>
+</ul>
+<figure>
+  <img src="images/12-recipe-board.png" alt="Claims board: claim cards in columns by status, each with its policy chip" loading="lazy">
+  <figcaption>The <em>Claims board</em> template: 150 claims in columns by status. Each card shows its policy, fetched with a single <code>$in</code>.</figcaption>
+</figure>
+<figure>
+  <img src="images/10-recipe-trace.png" alt="Trace view with per-step statistics and a query waterfall" loading="lazy">
+  <figcaption>The Trace view. Two contractor batches run in parallel, then one <code>$in</code> for persons, then the nested loop over claims.</figcaption>
+</figure>
+
+<h3 id="recipe-own">Writing your own recipe</h3>
+<p>Click <strong>⧉ Customise (copy)</strong> on a template to save an editable copy in your workspace config. Then use <strong>✎ Edit</strong> (<kbd>Alt</kbd>+<kbd>E</kbd>) to edit it as JSON. LiteMongo validates the JSON as you type. A recipe looks like this:</p>
+<pre><code>{
+  "id": "latest-claims",
+  "name": "Latest claims per policy",
+  "params": [
+    { "name": "status", "label": "Status", "default": "ACTIVE", "options": ["ACTIVE", "LAPSED"] },
+    { "name": "since", "type": "date" }
+  ],
+  "steps": [
+    { "id": "policy", "collection": "policies2",
+      "filter": { "status": "{{status}}", "issueDate": { "$gte": "{{since}}" } },
+      "sort": { "issueDate": -1 }, "limit": 20,
+      "display": { "title": "policyNumber", "badge": "productCode", "fields": ["status", "premium.gross"] } },
+    { "id": "claim", "collection": "claims2", "parent": "policy",
+      "strategy": "nested-loop", "localField": "_id", "foreignField": "policyId",
+      "sort": { "incidentDate": -1 }, "limit": 3,
+      "display": { "title": "claimNumber", "layout": "table" } }
+  ],
+  "view": { "mode": "dossier" }
+}</code></pre>
+<ul>
+  <li><code>"{{param}}"</code> is replaced with the parameter value. The value gets the parameter's type: <code>string</code>, <code>number</code>, <code>objectId</code>, <code>date</code>, <code>boolean</code> or <code>json</code>. Placeholders also work inside text, for example <code>{ "$regex": "^{{q}}" }</code>.</li>
+  <li><code>"{{parent.path}}"</code> is available in <code>nested-loop</code> steps. It is replaced with the parent document's value at that path.</li>
+  <li><code>parent</code> names an earlier step. When you leave it out, the step uses the previous step as its parent.</li>
+  <li><code>batched</code> steps take <code>batchSize</code> and <code>concurrency</code>. <code>nested-loop</code> steps take <code>limit</code> (documents per parent), <code>concurrency</code> and <code>maxParents</code>.</li>
+</ul>
+
+<h2 id="script">9. Script mode</h2>
+<p>Switch a tab to <strong>Script</strong> to write mongosh-style JavaScript, such as <code>db.claims2.find(…).sort(…).limit(…)</code>, loops, variables and <code>print()</code>. The script runs inside your browser. The server only executes one database operation at a time and never runs your code. Write operations are blocked on read-only connections.</p>
+<figure>
+  <img src="images/13-script.png" alt="Script mode with a mongosh-style script, a result table and console output" loading="lazy">
+  <figcaption>The last expression's result appears in the table. <code>print()</code> output goes to the console.</figcaption>
+</figure>
+
+<h2 id="config">10. Workspace config</h2>
+<p>Schemas, saved relations, saved views, recipes and ID renumbering rules all live in one portable file, <code>litemongo.config.json</code>.</p>
+<ul>
+  <li><strong>💾 Save config</strong> (<kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>) writes the file. After the first save, changes are saved to it automatically.</li>
+  <li><strong>⚙ Workspace config</strong> opens a validating editor and lets you import or export the config.</li>
+  <li><strong>☰ Schema</strong> (<kbd>Alt</kbd>+<kbd>S</kbd>) documents fields, enum values, ID paths and foreign keys. This drives autocomplete, link suggestions and badges.</li>
+</ul>
+<p>To bring your setup to a jump host, copy the config there, or copy it back to your machine the same way.</p>
+
+<h2 id="install">11. Installing the desktop app</h2>
+<p>Installers are published on the GitHub Releases page. They are not code-signed yet, so each operating system asks you to confirm the first launch. This is expected.</p>
+<table>
+  <tr><th>System</th><th>File</th></tr>
+  <tr><td>Windows (x64)</td><td><code>LiteMongo Setup &lt;version&gt;.exe</code> (installer) or <code>LiteMongo &lt;version&gt;.exe</code> (portable, no install)</td></tr>
+  <tr><td>macOS (Apple Silicon)</td><td><code>LiteMongo-&lt;version&gt;-arm64.dmg</code> or <code>LiteMongo-&lt;version&gt;-arm64-mac.zip</code></td></tr>
+  <tr><td>Linux (x64)</td><td><code>LiteMongo-&lt;version&gt;.AppImage</code> (any distribution) or <code>litemongo-desktop_&lt;version&gt;_amd64.deb</code> (Debian / Ubuntu)</td></tr>
+</table>
+
+<h3 id="install-win">Windows</h3>
+<ol>
+  <li>Run <code>LiteMongo Setup &lt;version&gt;.exe</code>, or the portable <code>.exe</code> if you don't want to install anything.</li>
+  <li>Windows Defender SmartScreen shows <em>“Windows protected your PC”</em>. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+  <li>The installer adds a Start menu entry. Later launches start without a warning.</li>
+</ol>
+<p class="warn">If your antivirus quarantines the portable <code>.exe</code>, use the installer instead, or allow the file in the antivirus settings.</p>
+
+<h3 id="install-mac">macOS</h3>
+<ol>
+  <li>Open the <code>.dmg</code> and drag <strong>LiteMongo</strong> into <strong>Applications</strong>.</li>
+  <li>The app is not signed with an Apple Developer certificate, so macOS may refuse to open it: <em>“LiteMongo is damaged and can't be opened”</em> or <em>“cannot be verified”</em>. Remove the quarantine flag once in Terminal:
+    <pre><code>xattr -dr com.apple.quarantine /Applications/LiteMongo.app</code></pre>
+  </li>
+  <li>Open LiteMongo normally. If macOS still blocks it, go to <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>.</li>
+</ol>
+
+<h3 id="install-linux">Linux</h3>
+<p><strong>Debian / Ubuntu (.deb)</strong>: recommended. It installs a menu entry and sets up Chromium's sandbox correctly:</p>
+<pre><code>sudo apt install ./litemongo-desktop_&lt;version&gt;_amd64.deb
+litemongo-desktop            # or start LiteMongo from the application menu</code></pre>
+<p><strong>AppImage</strong> (any distribution): make it executable and run it:</p>
+<pre><code>chmod +x LiteMongo-&lt;version&gt;.AppImage
+./LiteMongo-&lt;version&gt;.AppImage</code></pre>
+<ul>
+  <li>If it fails with <em>“AppImages require FUSE to run”</em>, install FUSE 2: <code>sudo apt install libfuse2</code>. On Ubuntu 24.04 the package is <code>libfuse2t64</code>.</li>
+  <li>On Ubuntu 23.10 and later, AppArmor can block Electron's sandbox. The error mentions <em>“The SUID sandbox helper binary was found, but is not configured correctly”</em>. Start it with <code>./LiteMongo-&lt;version&gt;.AppImage --no-sandbox</code>, or use the <code>.deb</code> instead.</li>
+</ul>
+
+<h3>Good to know</h3>
+<ul>
+  <li>The desktop app runs its own local server on <code>127.0.0.1:38017</code>. To use another port, set <code>LITEMONGO_DESKTOP_PORT</code>.</li>
+  <li>Connections, tabs and settings are stored in the app's local storage and survive updates.</li>
+  <li>On first start, a <em>Local Docker Dev</em> connection to <code>localhost:27017</code> is added for the bundled <code>docker compose</code> database. Delete it if you don't need it.</li>
+</ul>
+
+<h2 id="keys">12. Keyboard shortcuts</h2>
+<table>
+  <tr><th>Keys</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd></td><td>Run the query, script or recipe</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>T</kbd> / <kbd>Alt</kbd>+<kbd>W</kbd></td><td>New tab / close tab</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd>, <kbd>Alt</kbd>+<kbd>[</kbd> / <kbd>]</kbd></td><td>Switch tabs</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>V</kbd></td><td>Next view mode</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>L</kbd></td><td>Link a collection</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>F</kbd> / <kbd>Alt</kbd>+<kbd>G</kbd></td><td>Focus the filter / the results grid</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>C</kbd> / <kbd>Alt</kbd>+<kbd>P</kbd></td><td>Copy results as an EJSON bundle / paste a bundle</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>I</kbd></td><td>Indexes</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>S</kbd></td><td>Schema manager</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>E</kbd></td><td>Recipe JSON editor (recipe mode)</td></tr>
+  <tr><td><kbd>Alt</kbd>+<kbd>D</kbd></td><td>Theme: system, then light, then dark</td></tr>
+  <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>S</kbd></td><td>Save the workspace config</td></tr>
+  <tr><td><kbd>?</kbd></td><td>All shortcuts</td></tr>
+</table>
+</main>
+</div>
+</body>
+</html>

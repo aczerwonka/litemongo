@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
+import { ColumnsContext, type ColumnsControl } from '../store/useColumnPrefs';
 import type { ViewMode } from '../store/useTabStore';
-import { BadgesContext, useBadgesOn, useViewPrefsStore } from '../store/useViewPrefsStore';
-import type { CollectionSchema, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
+import { BadgesContext } from '../store/useViewPrefsStore';
+import type { CollectionSchema, ColumnPrefs, EjsonDoc, MasterDetailNode, RelationLevel } from '../types';
 import type { DistinctScan } from './DistinctPopover';
 import { Grid, rootSource, type GridRow } from './Grid';
 import { MasterDetailView } from './MasterDetailView';
@@ -27,30 +28,56 @@ export interface DataViewerProps {
   /** Embedded sub-document sections switched on (nested table; off by default). */
   shownSections?: string[];
   onShownSectionsChange?: (shown: string[]) => void;
+  /** `code` badges on in this view (per tab). */
+  badges: boolean;
+  /** Nested table prefs of this tab: last "Unfold all" / "Fold all", JSON for rows without details. */
+  nestedUnfold?: boolean | null;
+  onNestedUnfoldChange?: (open: boolean) => void;
+  nestedJson?: boolean;
+  onNestedJsonChange?: (on: boolean) => void;
+  /** Column order / hidden columns per grid source (per tab). */
+  columns?: ColumnPrefs;
+  onColumnsChange?: (columns: ColumnPrefs) => void;
 }
 
 /** Switcher: Flat Table vs Master-Detail panes vs Nested table vs Tree, all over the same result set. */
 export function DataViewer(props: DataViewerProps) {
-  const badges = useBadgesOn(props.viewMode);
   if (props.docs.length === 0) {
     return <div className="p-4 text-sm text-zinc-500">No documents matched.</div>;
   }
   return (
-    <BadgesContext.Provider value={badges}>
-      <View {...props} />
+    <BadgesContext.Provider value={props.badges}>
+      <ColumnsProvider columns={props.columns} onChange={props.onColumnsChange}>
+        <View {...props} />
+      </ColumnsProvider>
     </BadgesContext.Provider>
   );
 }
 
-/** Show / hide `code` badges in the given view (remembered for the browser session). */
-export function BadgeToggle({ mode }: { mode: ViewMode }) {
-  const on = useBadgesOn(mode);
-  const setBadges = useViewPrefsStore((s) => s.setBadges);
+function ColumnsProvider({ columns, onChange, children }: { columns: ColumnPrefs | undefined; onChange: ((c: ColumnPrefs) => void) | undefined; children: React.ReactNode }) {
+  const control = useMemo<ColumnsControl | null>(() => {
+    if (!onChange) return null;
+    const prefs = columns ?? {};
+    return {
+      prefs,
+      set: (key, pref) => {
+        const next = { ...prefs };
+        if (pref && ((pref.order?.length ?? 0) > 0 || (pref.hidden?.length ?? 0) > 0)) next[key] = pref;
+        else delete next[key];
+        onChange(next);
+      },
+    };
+  }, [columns, onChange]);
+  return <ColumnsContext.Provider value={control}>{children}</ColumnsContext.Provider>;
+}
+
+/** Show / hide `code` badges in the current view of one tab. */
+export function BadgeToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
     <button
       type="button"
       aria-pressed={on}
-      onClick={() => setBadges(mode, !on)}
+      onClick={() => onChange(!on)}
       title={on ? 'Hide [code] badges in this view' : 'Show [code] badges in this view'}
       className={`rounded border px-2 py-0.5 font-mono text-xs ${
         on ? 'border-indigo-700 bg-indigo-950 text-indigo-200' : 'border-zinc-700 text-zinc-500 line-through hover:text-zinc-300'

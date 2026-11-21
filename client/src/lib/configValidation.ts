@@ -1,3 +1,4 @@
+import { parseRecipe } from '../../../server/src/lib/recipe';
 import { FIELD_TYPES } from './schema';
 
 /**
@@ -21,7 +22,7 @@ export interface ValidationResult {
   ok: boolean;
 }
 
-const TOP_LEVEL = new Set(['version', 'workspaceName', 'schemas', 'relationBlueprints', 'renumberingRules', 'queryPresets']);
+const TOP_LEVEL = new Set(['version', 'workspaceName', 'schemas', 'relationBlueprints', 'renumberingRules', 'queryPresets', 'recipes']);
 const STRATEGIES = new Set(['SUFFIX_TIMESTAMP', 'UUID_SHORT', 'KEEP', 'OFFSET']);
 const KNOWN_TYPES = new Set<string>(FIELD_TYPES);
 
@@ -147,6 +148,26 @@ export function validateConfig(cfg: unknown): ConfigIssue[] {
         if (p.relationBlueprintId !== undefined) {
           if (typeof p.relationBlueprintId !== 'string') error(`${base}.relationBlueprintId`, 'must be a string');
           else if (!blueprintIds.has(p.relationBlueprintId)) warn(`${base}.relationBlueprintId`, `no relation blueprint with id "${p.relationBlueprintId}"`);
+        }
+      });
+    }
+  }
+
+  // recipes (same validation as the server's /api/recipe/run)
+  if (cfg.recipes !== undefined) {
+    if (!Array.isArray(cfg.recipes)) error('recipes', 'must be an array');
+    else {
+      const ids = new Set<string>();
+      cfg.recipes.forEach((r, i) => {
+        const base = `recipes[${i}]`;
+        if (!isRecord(r)) return error(base, 'must be an object');
+        if (typeof r.id !== 'string' || !r.id) error(`${base}.id`, 'required string');
+        else if (ids.has(r.id)) error(`${base}.id`, `duplicate id "${r.id}"`);
+        else ids.add(r.id);
+        try {
+          parseRecipe(r);
+        } catch (err) {
+          error(base, (err as Error).message.replace(/^recipe\.?/, ''));
         }
       });
     }
