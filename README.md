@@ -4,7 +4,7 @@ LiteMongo is a lightweight, web-based MongoDB client (an alternative to Compass 
 
 > Polish version: [docs/DOKUMENTACJA.md](docs/DOKUMENTACJA.md)
 >
-> **Illustrated tutorial** (queries, links, nested table, columns, saved views, fetch recipes, installing the desktop app): open [docs/tutorial/index.html](docs/tutorial/index.html) in a browser.
+> **Illustrated tutorial** (queries, links, nested table, columns, saved views, fetch recipes, installing the desktop app): see [docs/tutorial/README.md](docs/tutorial/README.md).
 
 **Important:** the server is stateless. Connection strings and passwords live only in the browser (localStorage) and are sent with each request in the `X-Mongo-URI` header. The server never writes anything to disk.
 
