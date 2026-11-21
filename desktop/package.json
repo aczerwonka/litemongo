@@ -4,6 +4,7 @@
   "private": true,
   "description": "LiteMongo desktop (Electron) — standalone app with embedded server",
   "author": "LiteMongo",
+  "homepage": "https://github.com/aczerwonka/litemongo",
   "main": "dist/main.mjs",
   "type": "module",
   "scripts": {
@@ -22,11 +23,40 @@
   "build": {
     "appId": "dev.litemongo.desktop",
     "productName": "LiteMongo",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["dist/**", "package.json"],
-    "extraResources": [{ "from": "../client/dist", "to": "client" }],
-    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg", "zip"] },
-    "win": { "target": ["nsis", "portable"] },
-    "linux": { "target": ["AppImage", "deb"], "category": "Development" }
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../client/dist",
+        "to": "client"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "maintainer": "LiteMongo"
+    }
   }
 }
