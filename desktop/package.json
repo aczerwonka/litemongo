@@ -1,6 +1,6 @@
 {
   "name": "litemongo-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "LiteMongo desktop (Electron) — standalone app with embedded server",
   "author": "LiteMongo",
