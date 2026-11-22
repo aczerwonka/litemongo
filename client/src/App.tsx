@@ -7,7 +7,7 @@ import { Sidebar } from './components/Sidebar';
 import { TabBar } from './components/TabBar';
 import { Button, Toaster, useServerInfo } from './components/ui';
 import { useHotkeys, type Hotkeys } from './hooks/useHotkeys';
-import { useActiveTab, useTabStore } from './store/useTabStore';
+import { useActiveTab, useTabStore, visibleTabs } from './store/useTabStore';
 import { DEFAULT_PROFILE, useConnectionStore } from './store/useConnectionStore';
 import { defaultDbFromUri } from './lib/api';
 import { nextThemeMode, useResolvedTheme, useThemeStore, type ThemeMode } from './store/useThemeStore';
@@ -62,11 +62,13 @@ export default function App() {
   // Read the store directly so rapid presses never act on a stale render.
   const cycleTheme = () => setThemeMode(nextThemeMode(useThemeStore.getState().mode));
 
+  // Tab hotkeys move within the active connection's tabs (the ones in the tab bar).
   const stepTab = (direction: 1 | -1) => {
-    const { tabs, activeId, setActive } = useTabStore.getState();
-    const i = tabs.findIndex((t) => t.id === activeId);
+    const state = useTabStore.getState();
+    const tabs = visibleTabs(state);
+    const i = tabs.findIndex((t) => t.id === state.activeId);
     const next = tabs[(i + direction + tabs.length) % tabs.length];
-    if (next) setActive(next.id);
+    if (next) state.setActive(next.id);
   };
   const hotkeys: Hotkeys = {
     'alt+KeyT': () => useTabStore.getState().addTab({ connectionId: tab.connectionId, db: tab.db }),
@@ -81,9 +83,9 @@ export default function App() {
   };
   for (let n = 1; n <= 9; n++) {
     hotkeys[`alt+Digit${n}`] = () => {
-      const { tabs, setActive } = useTabStore.getState();
-      const target = tabs[n - 1];
-      if (target) setActive(target.id);
+      const state = useTabStore.getState();
+      const target = visibleTabs(state)[n - 1];
+      if (target) state.setActive(target.id);
     };
   }
   useHotkeys(hotkeys);

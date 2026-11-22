@@ -4,7 +4,9 @@ import { useRunResult } from '../hooks/useRunResult';
 import { api, defaultDbFromUri } from '../lib/api';
 import { copyText } from '../lib/clipboard';
 import { parseQueryText } from '../lib/ejson';
-import { contextFor, useProfile } from '../store/useConnectionStore';
+import { contextFor, useProfile, type ConnectionProfile } from '../store/useConnectionStore';
+import { useLive } from '../store/useSessionStore';
+import { connect } from '../lib/connections';
 import { useTabStore, type QueryTab, type ViewMode } from '../store/useTabStore';
 import { badgesOn } from '../store/useViewPrefsStore';
 import { useUiStore } from '../store/useUiStore';
@@ -51,10 +53,12 @@ export function QueryWorkspace() {
 
 function TabPane({ tab, active }: { tab: QueryTab; active: boolean }) {
   const profile = useProfile(tab.connectionId);
+  const live = useLive(tab.connectionId);
 
   if (!profile) {
-    return <Empty tab={tab}>Select or add a connection in the sidebar to start querying.</Empty>;
+    return <Empty tab={tab}>Connect a connection in the sidebar (▶) to start querying.</Empty>;
   }
+  if (live?.status !== 'connected') return <Disconnected profile={profile} />;
   if (tab.mode === 'script') return <ScriptWorkspace tab={tab} active={active} />;
   if (tab.mode === 'recipe') return <RecipeWorkspace tab={tab} active={active} />;
   if (!tab.collection) {
@@ -66,6 +70,27 @@ function TabPane({ tab, active }: { tab: QueryTab; active: boolean }) {
   }
   // Re-mounted when the tab is pointed at another collection / database.
   return <Workspace key={`${tab.db}/${tab.collection}`} tab={tab} active={active} />;
+}
+
+function Disconnected({ profile }: { profile: ConnectionProfile }) {
+  const live = useLive(profile.id);
+  const closeConnectionTabs = useTabStore((s) => s.closeConnectionTabs);
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-zinc-500">
+      <p>
+        <span className="font-semibold text-zinc-300">{profile.name}</span> is disconnected. Its tabs are kept; connect to query again.
+      </p>
+      {live?.status === 'error' && <p className="max-w-xl text-center text-red-400">{live.error}</p>}
+      <div className="flex gap-2">
+        <Button variant="primary" disabled={live?.status === 'connecting'} onClick={() => void connect(profile)}>
+          {live?.status === 'connecting' ? 'Connecting…' : '▶ Connect'}
+        </Button>
+        <Button variant="ghost" onClick={() => closeConnectionTabs(profile.id)}>
+          Close its tabs
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function Empty({ tab, children, script = false }: { tab: QueryTab; children: React.ReactNode; script?: boolean }) {

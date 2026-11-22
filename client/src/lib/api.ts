@@ -136,6 +136,9 @@ export const api = {
       { conn },
     ),
 
+  /** Close the server's cached client for this URI now (Disconnect). */
+  releaseConnection: (conn: ConnectionContext) => call<{ released: boolean }>('POST', '/api/connection/release', { conn }),
+
   databases: (conn: ConnectionContext) => call<{ databases: string[] }>('GET', '/api/databases', { conn }),
 
   collections: (conn: ConnectionContext, db: string) =>
