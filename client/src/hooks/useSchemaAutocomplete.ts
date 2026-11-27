@@ -14,6 +14,8 @@ import {
   type Suggestion,
 } from '../lib/mqlCompletion';
 import { fieldMapOf, mergeFields, type FieldMap } from '../lib/schema';
+import { analyzeCursor } from '../lib/queryContext';
+import { describeType, referencedCollections, ScriptTyper, type ScriptType } from '../lib/scriptTypes';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
 /**
@@ -140,12 +142,176 @@ function memberItems(
   return { suggestions: toItems(suggestions, model, position, partial, null) };
 }
 
+/** Typer over the fields of every collection the script mentions (documented + sampled). */
+async function typerFor(ctx: CompletionContext, script: string, wait: boolean): Promise<ScriptTyper> {
+  const names = referencedCollections(script);
+  const lists = await Promise.all(names.map((n) => fieldsFor(ctx, n, wait)));
+  const map = new Map(names.map((n, i) => [n, lists[i] as SchemaField[]]));
+  return new ScriptTyper((c) => map.get(c) ?? []);
+}
+
+/** `policies` → `policy`, `claim_items` → `claim_item` (callback parameter names). */
+function singular(name: string): string {
+  const base = name.replace(/\d+$/, '').split(/[._]/).pop() || name;
+  if (/ies$/.test(base)) return base.replace(/ies$/, 'y');
+  if (/(ss|us)$/.test(base)) return base;
+  if (/s$/.test(base)) return base.slice(0, -1);
+  return base === name ? 'item' : base;
+}
+
+function elementName(t: ScriptType): string {
+  if (t.t === 'cursor') return t.coll ? singular(t.coll) : 'doc';
+  if (t.t === 'value') return t.path.length ? singular(t.path[t.path.length - 1] as string) : singular(t.coll);
+  return 'x';
+}
+
+function arrayMethods(x: string): [string, string, string][] {
+  return [
+    ['length', 'length', 'Number of elements'],
+    ['forEach', `forEach((\${1:${x}}) => {\n\t$0\n})`, 'Run a function for each element'],
+    ['map', `map((\${1:${x}}) => \${1:${x}}.$0)`, 'New array of mapped values'],
+    ['filter', `filter((\${1:${x}}) => \${1:${x}}.$0)`, 'Elements matching a condition'],
+    ['find', `find((\${1:${x}}) => \${1:${x}}.$0)`, 'First element matching a condition'],
+    ['some', `some((\${1:${x}}) => \${1:${x}}.$0)`, 'Does any element match?'],
+    ['every', `every((\${1:${x}}) => \${1:${x}}.$0)`, 'Do all elements match?'],
+    ['flatMap', `flatMap((\${1:${x}}) => \${1:${x}}.$0)`, 'Map and flatten one level'],
+    ['includes', 'includes($0)', 'Contains the value?'],
+    ['slice', 'slice(${1:0}, ${2:10})', 'Part of the array'],
+    ['join', 'join("${1:, }")', 'Join into a string'],
+  ];
+}
+
+function fieldDoc(f: SchemaField): string | undefined {
+  return [f.description, f.enum?.length ? `Codes: ${f.enum.join(', ')}` : ''].filter(Boolean).join('\n\n') || undefined;
+}
+
+function fieldDetail(f: SchemaField): string | undefined {
+  return f.isArray ? 'array' : f.type;
+}
+
+/** Members of an inferred value: document fields, or array methods for arrays. */
+function valueMembers(typer: ScriptTyper, t: ScriptType & { t: 'value' }): Suggestion[] {
+  if (t.array) {
+    return arrayMethods(elementName(t)).map(([label, insertText, documentation]) => ({
+      label,
+      kind: 'method',
+      insertText,
+      snippet: true,
+      detail: describeType(t),
+      documentation,
+      sortText: `1${label}`,
+    }));
+  }
+  return typer.children(t).map((f) => {
+    const name = f.path[f.path.length - 1] as string;
+    const detail = fieldDetail(f);
+    const documentation = fieldDoc(f);
+    return {
+      label: name,
+      kind: 'field',
+      insertText: name,
+      ...(detail ? { detail } : {}),
+      ...(documentation ? { documentation } : {}),
+      sortText: `0${name}`,
+    };
+  });
+}
+
+/** Cursor methods whose callbacks are named after the collection (`forEach((policy) => …)`). */
+function cursorMethods(t: ScriptType): [string, string, string][] {
+  const x = elementName(t);
+  return CURSOR_METHODS.map(([label, insert, doc]) => [label, insert.replace('(doc)', `(\${1:${x}})`), doc]);
+}
+
+const GLOBALS: [string, string, string][] = [
+  ['db', 'db', 'Current database (db.<collection>.find(…))'],
+  ['print', 'print($0)', 'Print values to the console'],
+  ['printjson', 'printjson($0)', 'Print a value as shell JSON'],
+  ['console', 'console', 'console.log / warn / error'],
+  ['ObjectId', 'ObjectId("$0")', 'ObjectId from a 24-character hex string'],
+  ['ISODate', 'ISODate("${1:2026-01-01}")', 'Date from an ISO string'],
+  ['NumberDecimal', 'NumberDecimal("$0")', 'Decimal128 value'],
+  ['NumberLong', 'NumberLong("$0")', 'Int64 value'],
+  ['NumberInt', 'NumberInt($0)', 'Int32 value'],
+  ['UUID', 'UUID("$0")', 'UUID value'],
+  ['tojson', 'tojson($0)', 'Shell JSON text of a value'],
+  ['sleep', 'sleep(${1:100})', 'Pause (ms, max 10 s)'],
+];
+
+function globalItems(typer: ScriptTyper, before: string): Suggestion[] {
+  const vars: Suggestion[] = typer.variables(before).map((v) => {
+    const t = typer.binding(v, before);
+    const detail = describeType(t);
+    return { label: v, kind: 'value', insertText: v, ...(detail ? { detail } : {}), sortText: `0${v}` };
+  });
+  const globals: Suggestion[] = GLOBALS.map(([label, insertText, documentation]) => ({
+    label,
+    kind: 'method',
+    insertText,
+    snippet: true,
+    documentation,
+    sortText: `2${label}`,
+  }));
+  return [...vars, ...globals];
+}
+
+/** Cursor inside an unfinished string on the current line? */
+function inStringOnLine(before: string): boolean {
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i] as string;
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = null;
+    } else if (ch === '/' && line[i + 1] === '/') return false;
+    else if (ch === '"' || ch === "'" || ch === '`') quote = ch;
+  }
+  return quote !== null;
+}
+
+function inComment(before: string): boolean {
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  return /^[^"'`]*\/\//.test(line) || before.lastIndexOf('/*') > before.lastIndexOf('*/');
+}
+
 async function provideScript(
   ctx: CompletionContext,
   model: monaco.editor.ITextModel,
   position: monaco.Position,
 ): Promise<monaco.languages.CompletionList | undefined> {
   const before = model.getValueInRange({ startLineNumber: 1, startColumn: 1, endLineNumber: position.lineNumber, endColumn: position.column });
+  if (inComment(before)) return undefined;
+  const typer = await typerFor(ctx, model.getValue(), true);
+
+  // `p.status === "` → the field's codes.
+  const cmp = /(?:===|!==|==|!=)\s*(["'])([^"'\n]*)$/.exec(before);
+  if (cmp) {
+    const left = before.slice(0, cmp.index).trimEnd();
+    const def = typer.fieldOf(typer.resolveBefore(left, left.length));
+    if (def?.enum?.length) {
+      const quote = cmp[1] as '"' | "'";
+      const items: Suggestion[] = def.enum.map((code) => ({
+        label: code,
+        kind: 'enum',
+        insertText: `${quote}${code}${quote}`,
+        detail: def.path.join('.'),
+        sortText: `0${code}`,
+      }));
+      return { suggestions: toItems(items, model, position, cmp[2] as string, quote) };
+    }
+  }
+
+  // Member access on an inferred value: `p.`, `p.covers.`, `cover.`, `const c = db.policies; c.`
+  const member = /\??\.\s*([A-Za-z_$][\w$]*)?$/.exec(before);
+  if (member && !inStringOnLine(before) && !/\d$/.test(before.slice(0, member.index))) {
+    const t = typer.resolveBefore(before, member.index);
+    const partial = member[1] ?? '';
+    if (t.t === 'value') return { suggestions: toItems(valueMembers(typer, t), model, position, partial, null) };
+    if (t.t === 'cursor') return memberItems(cursorMethods(t), [], model, position, partial);
+    if (t.t === 'collection') return memberItems(COLLECTION_METHODS, [], model, position, partial);
+  }
+
   const sc = analyzeScript(before);
   switch (sc.type) {
     case 'dbMember': {
@@ -165,14 +331,50 @@ async function provideScript(
       return memberItems(CURSOR_METHODS, [], model, position, sc.partial);
     case 'argument': {
       const kind = argumentKind(sc.method, sc.argIndex);
-      if (!kind) return undefined;
-      const fields = await fieldsFor(ctx, sc.collection, true);
-      const res = complete(kind, sc.argText, fields, { js: true });
-      return { suggestions: toItems(res.suggestions, model, position, res.partial, res.quote) };
+      if (kind) {
+        const fields = await fieldsFor(ctx, sc.collection, true);
+        const res = complete(kind, sc.argText, fields, { js: true });
+        // Values inside a query also accept variables and shell helpers (ObjectId, ISODate, …).
+        const word = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)$/.exec(before);
+        const extra = word && !res.quote && analyzeCursor(sc.argText).position === 'value' ? globalItems(typer, before) : [];
+        return { suggestions: toItems([...res.suggestions, ...extra], model, position, res.partial, res.quote) };
+      }
+      break;
     }
     default:
-      return undefined;
+      break;
   }
+  // Bare identifier: variables (with their inferred type) and shell globals.
+  const word = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)$/.exec(before);
+  if (word && !inStringOnLine(before)) {
+    return { suggestions: toItems(globalItems(typer, before), model, position, word[1] as string, null) };
+  }
+  return undefined;
+}
+
+/** Hover on a script identifier: inferred type, field type, description and codes. */
+async function provideHover(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.Hover | undefined> {
+  const ctx = contexts.get(model.uri.toString());
+  if (ctx?.kind !== 'script') return undefined;
+  const word = model.getWordAtPosition(position);
+  if (!word) return undefined;
+  const text = model.getValue();
+  const end = model.getOffsetAt({ lineNumber: position.lineNumber, column: word.endColumn });
+  const typer = await typerFor(ctx, text, false);
+  const t = typer.resolveBefore(text, end);
+  if (t.t === 'unknown' || t.t === 'db') return undefined;
+  const def = typer.fieldOf(t);
+  const lines = [`\`${describeType(t)}\`${def?.type && !def.isArray ? ` : ${def.type}` : ''}`];
+  if (def?.description) lines.push(def.description);
+  if (def?.enum?.length) lines.push(`Codes: ${def.enum.map((c) => `\`${c}\``).join(', ')}`);
+  if (t.t === 'value') {
+    const kids = typer.children({ ...t, array: false });
+    if (kids.length) lines.push(`Fields: ${kids.map((f) => f.path[f.path.length - 1]).join(', ')}`);
+  }
+  return {
+    range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+    contents: lines.map((value) => ({ value })),
+  };
 }
 
 async function provide(model: monaco.editor.ITextModel, position: monaco.Position): Promise<monaco.languages.CompletionList | undefined> {
@@ -193,6 +395,7 @@ function ensureRegistered(language: 'json' | 'javascript'): void {
     triggerCharacters: ['"', "'", '$', '.', ':', '{', '[', ',', '('],
     provideCompletionItems: (model, position) => provide(model, position),
   });
+  if (language === 'javascript') monaco.languages.registerHoverProvider('javascript', { provideHover: (model, position) => provideHover(model, position) });
 }
 
 /** Attach MQL completion to the Monaco model at `path` (the Editor `path` prop). */

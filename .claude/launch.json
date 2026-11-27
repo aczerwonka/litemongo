@@ -3,10 +3,10 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "sh",
       "runtimeArgs": [
-        "run",
-        "dev"
+        "-c",
+        "PORT=3001 npx concurrently -k -n server,client -c blue,green \"npm run dev:server\" \"PORT=5173 npm run dev:client\""
       ],
       "port": 5173
     },
