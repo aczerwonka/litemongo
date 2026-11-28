@@ -19,7 +19,7 @@ export interface SchemaField {
 
 export interface Suggestion {
   label: string;
-  kind: 'field' | 'operator' | 'value' | 'enum' | 'stage' | 'method' | 'collection';
+  kind: 'field' | 'operator' | 'value' | 'enum' | 'stage' | 'method' | 'collection' | 'property' | 'variable' | 'keyword' | 'snippet' | 'namespace';
   insertText: string;
   snippet?: boolean;
   detail?: string;

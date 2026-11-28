@@ -1,3 +1,4 @@
+import { GLOBAL_RETURNS, kindOfFieldType, MEMBERS, NAMESPACES, type JsKind, type JsMember } from './jsCatalog';
 import type { SchemaField } from './mqlCompletion';
 
 /**
@@ -20,6 +21,10 @@ export type ScriptType =
   | { t: 'cursor'; coll: string | null }
   /** Value inside a collection's documents: `path` [] is the document itself; `array` = an array of the values at `path`. */
   | { t: 'value'; coll: string; path: string[]; array: boolean }
+  /** Plain JavaScript value (`of`: element kind of an array). */
+  | { t: 'js'; kind: JsKind; of?: JsKind | undefined }
+  /** Built-in namespace (Math, JSON, Object, …). */
+  | { t: 'ns'; name: string }
   | { t: 'unknown' };
 
 export type FieldLookup = (collection: string) => SchemaField[];
@@ -33,8 +38,6 @@ const KEYWORDS = new Set([
 const CURSOR_CHAIN = new Set([
   'sort', 'limit', 'skip', 'project', 'projection', 'batchSize', 'hint', 'maxTimeMS', 'comment', 'collation', 'allowDiskUse', 'pretty', 'readPref',
 ]);
-const ARRAY_SAME = new Set(['filter', 'slice', 'reverse', 'sort', 'concat', 'toSorted', 'toReversed']);
-const ARRAY_ELEMENT = new Set(['find', 'findLast', 'at', 'pop', 'shift']);
 const CALLBACKS = 'forEach|map|filter|find|findLast|findIndex|some|every|flatMap|sort';
 
 function escapeRe(s: string): string {
@@ -73,6 +76,14 @@ export function exprStartBefore(text: string, end: number): number {
     if (afterDot) while (i > 0 && /\s/.test(text[i - 1] as string)) i--;
     const ch = text[i - 1];
     if (ch === undefined) break;
+    if (ch === '"' || ch === "'" || ch === '`') {
+      // String literal as the primary: `"a,b".split(",")`
+      let j = i - 2;
+      while (j >= 0 && !(text[j] === ch && text[j - 1] !== '\\')) j--;
+      if (j < 0) return -1;
+      i = j;
+      break;
+    }
     if (ch === ')' || ch === ']') {
       const open = matchBackward(text, i - 1);
       if (open < 0) return -1;
@@ -100,6 +111,26 @@ export function exprStartBefore(text: string, end: number): number {
   }
   if (i >= end) return -1;
   return i;
+}
+
+/** Index of the bracket closing the one at `open` (forward, strings skipped), or -1. */
+function matchForward(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i] as string;
+    if (ch === '"' || ch === "'" || ch === '`') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== ch) j += text[j] === '\\' ? 2 : 1;
+      i = j;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 /** End index (exclusive) of the expression starting at `start`: up to a top-level `;` `,` `)` or a line break not followed by `.chain`. */
@@ -139,7 +170,8 @@ type Segment =
   | { k: 'prop'; name: string }
   | { k: 'index'; text: string }
   | { k: 'call'; text: string }
-  | { k: 'paren'; text: string };
+  | { k: 'paren'; text: string }
+  | { k: 'lit'; kind: JsKind };
 
 /** Split a member/call chain into segments (`db`, `.policies`, `.find`, `({…})`, `[0]`). */
 export function segments(expr: string): Segment[] | null {
@@ -161,11 +193,39 @@ export function segments(expr: string): Segment[] | null {
       i += m[0].length;
       continue;
     }
+    if (out.length === 0 && (ch === '"' || ch === "'" || ch === '`')) {
+      let j = i + 1;
+      while (j < s.length && s[j] !== ch) j += s[j] === '\\' ? 2 : 1;
+      if (j >= s.length) return null;
+      out.push({ k: 'lit', kind: 'string' });
+      i = j + 1;
+      continue;
+    }
+    if (out.length === 0 && /\d/.test(ch)) {
+      const num = /^\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?/i.exec(s.slice(i)) as RegExpExecArray;
+      out.push({ k: 'lit', kind: 'number' });
+      i += num[0].length;
+      continue;
+    }
+    if (out.length === 0 && ch === '{') {
+      const close = matchForward(s, i);
+      if (s[close] !== '}') return null;
+      out.push({ k: 'lit', kind: 'object' });
+      i = close + 1;
+      continue;
+    }
+    if (out.length === 0 && ch === '/' ) {
+      const re = /^\/(?:\\.|[^/\\\n])+\/[a-z]*/.exec(s.slice(i));
+      if (!re) return null;
+      out.push({ k: 'lit', kind: 'regexp' });
+      i += re[0].length;
+      continue;
+    }
     if (ch === '(' || ch === '[') {
-      const close = exprEndAfter(s, i + 1);
+      const close = matchForward(s, i);
       if (s[close] !== (ch === '(' ? ')' : ']')) return null;
       const text = s.slice(i + 1, close);
-      if (ch === '[') out.push({ k: 'index', text });
+      if (ch === '[') out.push(out.length === 0 ? { k: 'lit', kind: 'array' } : { k: 'index', text });
       else out.push(out.length === 0 ? { k: 'paren', text } : { k: 'call', text });
       i = close + 1;
       continue;
@@ -202,6 +262,7 @@ export class ScriptTyper {
   element(t: ScriptType): ScriptType {
     if (t.t === 'cursor') return t.coll ? { t: 'value', coll: t.coll, path: [], array: false } : UNKNOWN;
     if (t.t === 'value' && t.array) return { ...t, array: false };
+    if (t.t === 'js' && t.kind === 'array' && t.of) return { t: 'js', kind: t.of };
     return UNKNOWN;
   }
 
@@ -227,11 +288,24 @@ export class ScriptTyper {
     if (!segs?.length) return UNKNOWN;
     const [first, ...rest] = segs as [Segment, ...Segment[]];
     let cur: ScriptType;
-    if (first.k === 'ident') cur = first.name === 'db' ? { t: 'db' } : this.binding(first.name, before);
+    let start = 0;
+    if (first.k === 'lit') cur = { t: 'js', kind: first.kind };
     else if (first.k === 'paren') cur = this.resolve(first.text, before);
-    else return UNKNOWN;
+    else if (first.k !== 'ident') return UNKNOWN;
+    else if (first.name === 'db') cur = { t: 'db' };
+    else {
+      cur = this.binding(first.name, before);
+      if (cur.t === 'unknown') {
+        // Built-ins: Math.max(…), ObjectId(…), new Date(…), String(x).
+        const kind = GLOBAL_RETURNS[first.name];
+        if (rest[0]?.k === 'call' && kind) {
+          cur = { t: 'js', kind };
+          start = 1;
+        } else if (NAMESPACES[first.name]) cur = { t: 'ns', name: first.name };
+      }
+    }
 
-    for (let i = 0; i < rest.length; i++) {
+    for (let i = start; i < rest.length; i++) {
       const seg = rest[i] as Segment;
       const next = rest[i + 1];
       const called = next?.k === 'call';
@@ -243,6 +317,12 @@ export class ScriptTyper {
             i++;
           } else if (seg.k === 'prop' && seg.name === 'getSiblingDB' && called) {
             cur = { t: 'db' };
+            i++;
+          } else if (seg.k === 'prop' && seg.name === 'getCollectionNames' && called) {
+            cur = { t: 'js', kind: 'array', of: 'string' };
+            i++;
+          } else if (seg.k === 'prop' && seg.name === 'getName' && called) {
+            cur = { t: 'js', kind: 'string' };
             i++;
           } else if (seg.k === 'prop' && !called) cur = { t: 'collection', coll: seg.name };
           else if (seg.k === 'index') {
@@ -260,42 +340,89 @@ export class ScriptTyper {
             else if (seg.name === 'distinct') {
               const path = stringLiteral(next.text)?.split('.');
               cur = path ? { t: 'value', coll, path, array: true } : UNKNOWN;
-            } else cur = UNKNOWN;
+            } else if (seg.name === 'countDocuments' || seg.name === 'estimatedDocumentCount') cur = { t: 'js', kind: 'number' };
+            else if (seg.name === 'getIndexes') cur = { t: 'js', kind: 'array', of: 'object' };
+            else cur = UNKNOWN;
           } else cur = UNKNOWN;
           break;
         case 'cursor':
           if (seg.k === 'prop' && called) {
             i++;
             if (CURSOR_CHAIN.has(seg.name)) break;
-            if (seg.name === 'toArray') cur = cur.coll ? { t: 'value', coll: cur.coll, path: [], array: true } : UNKNOWN;
+            if (seg.name === 'toArray') cur = cur.coll ? { t: 'value', coll: cur.coll, path: [], array: true } : { t: 'js', kind: 'array', of: 'object' };
             else if (seg.name === 'next' || seg.name === 'tryNext') cur = this.element(cur);
+            else if (seg.name === 'count' || seg.name === 'itcount') cur = { t: 'js', kind: 'number' };
+            else if (seg.name === 'hasNext') cur = { t: 'js', kind: 'boolean' };
+            else if (seg.name === 'map') cur = { t: 'js', kind: 'array' };
             else cur = UNKNOWN;
           } else cur = UNKNOWN;
           break;
-        case 'value':
+        case 'value': {
           if (cur.array) {
             if (seg.k === 'index') cur = { ...cur, array: false };
-            else if (seg.k === 'prop' && called && ARRAY_ELEMENT.has(seg.name)) {
-              cur = { ...cur, array: false };
-              i++;
-            } else if (seg.k === 'prop' && called && ARRAY_SAME.has(seg.name)) i++;
-            else cur = UNKNOWN;
-          } else {
-            const name = seg.k === 'prop' ? seg.name : seg.k === 'index' ? stringLiteral(seg.text) : null;
-            if (!name || called) {
-              cur = UNKNOWN;
-              break;
-            }
-            const path = [...cur.path, name];
-            cur = { t: 'value', coll: cur.coll, path, array: !!this.field(cur.coll, path)?.isArray };
+            else if (seg.k === 'prop') {
+              const r = this.memberStep(cur, 'array', seg.name, called);
+              if (called) i++;
+              cur = r;
+            } else cur = UNKNOWN;
+            break;
           }
+          const scalar = this.jsKindOf(cur);
+          if (scalar && seg.k === 'prop') {
+            const r = this.memberStep(cur, scalar.kind, seg.name, called);
+            if (called) i++;
+            cur = r;
+            break;
+          }
+          const name = seg.k === 'prop' ? seg.name : seg.k === 'index' ? stringLiteral(seg.text) : null;
+          if (!name || called) {
+            cur = UNKNOWN;
+            break;
+          }
+          const path = [...cur.path, name];
+          cur = { t: 'value', coll: cur.coll, path, array: !!this.field(cur.coll, path)?.isArray };
           break;
+        }
+        case 'js':
+          if (seg.k === 'index') cur = cur.kind === 'array' ? this.element(cur) : cur.kind === 'string' ? { t: 'js', kind: 'string' } : UNKNOWN;
+          else if (seg.k === 'prop') {
+            const r = this.memberStep(cur, cur.kind, seg.name, called);
+            if (called) i++;
+            cur = r;
+          } else cur = UNKNOWN;
+          break;
+        case 'ns': {
+          const member = seg.k === 'prop' ? NAMESPACES[cur.name]?.find((x) => x.name === seg.name) : undefined;
+          if (!member) return UNKNOWN;
+          if (called) i++;
+          cur = member.returns && member.returns !== 'same' && member.returns !== 'elem' ? { t: 'js', kind: member.returns, of: member.of } : UNKNOWN;
+          break;
+        }
         default:
           return UNKNOWN;
       }
       if (cur.t === 'unknown') return cur;
     }
     return cur;
+  }
+
+  /** Result of `receiver.name(…)` / `receiver.name` for a receiver of JS kind `kind`. */
+  private memberStep(receiver: ScriptType, kind: JsKind, name: string, called: boolean): ScriptType {
+    const member: JsMember | undefined = MEMBERS[kind].find((x) => x.name === name);
+    if (!member || !member.returns || (!member.prop && !called)) return UNKNOWN;
+    if (member.returns === 'same') return receiver;
+    if (member.returns === 'elem') return this.element(receiver);
+    return { t: 'js', kind: member.returns, of: member.of };
+  }
+
+  /** JS kind of a value: a plain JS value, or a scalar schema field (string, Date, ObjectId, …). */
+  jsKindOf(t: ScriptType): { kind: JsKind; of?: JsKind | undefined } | null {
+    if (t.t === 'js') return { kind: t.kind, of: t.of };
+    if (t.t !== 'value') return null;
+    if (t.array) return { kind: 'array' };
+    if (t.path.length === 0 || this.children(t).length > 0) return null;
+    const kind = kindOfFieldType(this.field(t.coll, t.path)?.type);
+    return kind ? { kind } : null;
   }
 
   /** Type of variable `name` from its latest binding in `before`. */
@@ -376,6 +503,10 @@ export function describeType(t: ScriptType): string {
     case 'value':
       if (t.path.length === 0) return t.array ? `${t.coll} document[]` : `${t.coll} document`;
       return `${t.coll}.${t.path.join('.')}${t.array ? '[]' : ''}`;
+    case 'js':
+      return t.kind === 'array' && t.of ? `${t.of}[]` : t.kind;
+    case 'ns':
+      return t.name;
     default:
       return '';
   }

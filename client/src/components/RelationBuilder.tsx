@@ -5,7 +5,7 @@ import type { QueryTab } from '../store/useTabStore';
 import { useUiStore, type LinkDraft } from '../store/useUiStore';
 import { useBlueprints, useSchemas, useWorkspaceStore } from '../store/useWorkspaceStore';
 import type { CollectionSchema, RelationLevel } from '../types';
-import { Button, ErrorBox, Field, inputClass, Modal, toast } from './ui';
+import { Button, Dropdown, ErrorBox, Field, inputClass, Modal, toast } from './ui';
 
 /**
  * Relation Builder: link collections to the one being queried, right in the
@@ -207,21 +207,65 @@ export function RelationBar({
           </span>
         );
       })}
-      {suggestions.slice(0, 3).map((s) => (
-        <button
-          key={`${s.parentCollection}.${s.localField}:${s.collection}.${s.foreignField}`}
-          type="button"
-          title={`Suggested by the schema: ${s.parentCollection}.${s.localField} = ${s.collection}.${s.foreignField}`}
-          className="rounded border border-dashed border-zinc-700 px-1.5 py-0.5 font-mono text-xs text-zinc-400 hover:border-emerald-600 hover:text-emerald-300"
-          onClick={() => addLevel(s)}
+      {suggestions.length > 0 && levels.length < MAX_LINKS ? (
+        <Dropdown
+          label={
+            <span className="text-xs">
+              + Link
+              <span className="ml-1 rounded bg-emerald-900 px-1 text-[10px] text-emerald-300" title="Suggested by the schema">
+                {suggestions.length}
+              </span>
+            </span>
+          }
+          title="Link a collection: schema suggestions or a custom link (Alt+L)"
+          width={360}
         >
-          + {s.collection}
-          <span className="text-zinc-600"> on {s.foreignField}</span>
-        </button>
-      ))}
-      <Button className="px-1.5 py-0.5 text-xs" onClick={() => openLink({})} disabled={levels.length >= MAX_LINKS} title="Link a collection (Alt+L)">
-        + Link…
-      </Button>
+          {(close) => (
+            <div className="flex flex-col gap-0.5" role="menu" aria-label="Link a collection">
+              <div className="px-1.5 pb-1 text-[11px] uppercase tracking-wide text-zinc-500">Suggested by the schema</div>
+              {suggestions.map((s) => {
+                const depth = (tree.get(s.parentCollection) ?? 1) + 1;
+                return (
+                  <button
+                    key={`${s.parentCollection}.${s.localField}:${s.collection}.${s.foreignField}`}
+                    type="button"
+                    role="menuitem"
+                    className="flex flex-col items-start rounded px-1.5 py-1 text-left hover:bg-zinc-800"
+                    onClick={() => {
+                      addLevel(s);
+                      close();
+                    }}
+                  >
+                    <span className="text-sm text-zinc-100">
+                      {depth > 2 && <span className="text-emerald-500">↳ </span>}+ {s.collection}
+                      <span className="ml-1.5 text-[11px] text-zinc-500">level {depth}</span>
+                    </span>
+                    <span className="font-mono text-[11px] text-zinc-400">
+                      {s.parentCollection}.{s.localField} <span className="text-emerald-500">=</span> {s.collection}.{s.foreignField}
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="my-1 border-t border-zinc-800" />
+              <button
+                type="button"
+                role="menuitem"
+                className="rounded px-1.5 py-1 text-left text-sm text-zinc-300 hover:bg-zinc-800"
+                onClick={() => {
+                  close();
+                  openLink({});
+                }}
+              >
+                Custom link… <span className="text-[11px] text-zinc-500">Alt+L</span>
+              </button>
+            </div>
+          )}
+        </Dropdown>
+      ) : (
+        <Button className="px-1.5 py-0.5 text-xs" onClick={() => openLink({})} disabled={levels.length >= MAX_LINKS} title="Link a collection (Alt+L)">
+          + Link…
+        </Button>
+      )}
       {levels.length > 0 && (
         <Button variant="ghost" className="px-1.5 py-0.5 text-xs" onClick={() => onChange([], null)} title="Remove every link (plain query)">
           ✕ Clear links

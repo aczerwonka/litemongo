@@ -15,7 +15,8 @@ import {
 } from '../lib/mqlCompletion';
 import { fieldMapOf, mergeFields, type FieldMap } from '../lib/schema';
 import { analyzeCursor } from '../lib/queryContext';
-import { describeType, referencedCollections, ScriptTyper, type ScriptType } from '../lib/scriptTypes';
+import { describeType, exprStartBefore, referencedCollections, ScriptTyper, type ScriptType } from '../lib/scriptTypes';
+import { KEYWORDS, MEMBERS, NAMESPACES, STATEMENTS, type JsKind, type JsMember } from '../lib/jsCatalog';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
 /**
@@ -113,6 +114,11 @@ function toItems(
     stage: K.Keyword,
     method: K.Method,
     collection: K.Module,
+    property: K.Property,
+    variable: K.Variable,
+    keyword: K.Keyword,
+    snippet: K.Snippet,
+    namespace: K.Module,
   };
   return suggestions.map((s) => ({
     label: s.label,
@@ -162,23 +168,28 @@ function singular(name: string): string {
 function elementName(t: ScriptType): string {
   if (t.t === 'cursor') return t.coll ? singular(t.coll) : 'doc';
   if (t.t === 'value') return t.path.length ? singular(t.path[t.path.length - 1] as string) : singular(t.coll);
-  return 'x';
+  if (t.t === 'js' && t.of === 'string') return 's';
+  if (t.t === 'js' && t.of === 'array') return 'entry';
+  return 'item';
 }
 
-function arrayMethods(x: string): [string, string, string][] {
-  return [
-    ['length', 'length', 'Number of elements'],
-    ['forEach', `forEach((\${1:${x}}) => {\n\t$0\n})`, 'Run a function for each element'],
-    ['map', `map((\${1:${x}}) => \${1:${x}}.$0)`, 'New array of mapped values'],
-    ['filter', `filter((\${1:${x}}) => \${1:${x}}.$0)`, 'Elements matching a condition'],
-    ['find', `find((\${1:${x}}) => \${1:${x}}.$0)`, 'First element matching a condition'],
-    ['some', `some((\${1:${x}}) => \${1:${x}}.$0)`, 'Does any element match?'],
-    ['every', `every((\${1:${x}}) => \${1:${x}}.$0)`, 'Do all elements match?'],
-    ['flatMap', `flatMap((\${1:${x}}) => \${1:${x}}.$0)`, 'Map and flatten one level'],
-    ['includes', 'includes($0)', 'Contains the value?'],
-    ['slice', 'slice(${1:0}, ${2:10})', 'Part of the array'],
-    ['join', 'join("${1:, }")', 'Join into a string'],
-  ];
+/** Catalog members (string / Date / array / Map … methods) as suggestions. */
+function jsMemberItems(members: JsMember[], receiver: ScriptType, sort = '1'): Suggestion[] {
+  const x = elementName(receiver);
+  const detail = describeType(receiver);
+  return members.map((m) => ({
+    label: m.name,
+    kind: m.prop ? 'property' : 'method',
+    insertText: m.insert.replace(/@x/g, x),
+    snippet: !m.prop,
+    ...(detail ? { detail } : {}),
+    documentation: m.returns && m.returns !== 'same' && m.returns !== 'elem' ? `${m.doc}\n\n→ ${m.of ? `${m.of}[]` : m.returns}` : m.doc,
+    sortText: `${sort}${m.name}`,
+  }));
+}
+
+function membersOf(kind: JsKind): JsMember[] {
+  return MEMBERS[kind];
 }
 
 function fieldDoc(f: SchemaField): string | undefined {
@@ -191,18 +202,11 @@ function fieldDetail(f: SchemaField): string | undefined {
 
 /** Members of an inferred value: document fields, or array methods for arrays. */
 function valueMembers(typer: ScriptTyper, t: ScriptType & { t: 'value' }): Suggestion[] {
-  if (t.array) {
-    return arrayMethods(elementName(t)).map(([label, insertText, documentation]) => ({
-      label,
-      kind: 'method',
-      insertText,
-      snippet: true,
-      detail: describeType(t),
-      documentation,
-      sortText: `1${label}`,
-    }));
-  }
-  return typer.children(t).map((f) => {
+  if (t.array) return jsMemberItems(membersOf('array'), t);
+  const children = typer.children(t);
+  const scalar = typer.jsKindOf(t);
+  if (!children.length && scalar) return jsMemberItems(membersOf(scalar.kind), t);
+  return children.map((f) => {
     const name = f.path[f.path.length - 1] as string;
     const detail = fieldDetail(f);
     const documentation = fieldDoc(f);
@@ -236,13 +240,23 @@ const GLOBALS: [string, string, string][] = [
   ['UUID', 'UUID("$0")', 'UUID value'],
   ['tojson', 'tojson($0)', 'Shell JSON text of a value'],
   ['sleep', 'sleep(${1:100})', 'Pause (ms, max 10 s)'],
+  ['Date', 'new Date(${1})', 'Current date / time (or from text / ms)'],
+  ['Map', 'new Map()', 'Key → value map (group documents by id, …)'],
+  ['Set', 'new Set()', 'Set of unique values'],
+  ['String', 'String($0)', 'Convert to text (ObjectId → hex)'],
+  ['Number', 'Number($0)', 'Convert to a number (Decimal128 / Long too)'],
+  ['Boolean', 'Boolean($0)', 'Convert to true / false'],
+  ['RegExp', 'new RegExp("$1", "${2:i}")', 'Regular expression from text'],
+  ['parseInt', 'parseInt($0)', 'Integer from text'],
+  ['parseFloat', 'parseFloat($0)', 'Number from text'],
+  ['isNaN', 'isNaN($0)', 'Is it NaN?'],
 ];
 
 function globalItems(typer: ScriptTyper, before: string): Suggestion[] {
   const vars: Suggestion[] = typer.variables(before).map((v) => {
     const t = typer.binding(v, before);
     const detail = describeType(t);
-    return { label: v, kind: 'value', insertText: v, ...(detail ? { detail } : {}), sortText: `0${v}` };
+    return { label: v, kind: 'variable', insertText: v, ...(detail ? { detail } : {}), sortText: `0${v}` };
   });
   const globals: Suggestion[] = GLOBALS.map(([label, insertText, documentation]) => ({
     label,
@@ -252,7 +266,32 @@ function globalItems(typer: ScriptTyper, before: string): Suggestion[] {
     documentation,
     sortText: `2${label}`,
   }));
-  return [...vars, ...globals];
+  const namespaces: Suggestion[] = Object.keys(NAMESPACES)
+    .filter((n) => !GLOBALS.some(([g]) => g === n))
+    .map((n) => ({ label: n, kind: 'namespace', insertText: n, detail: 'built-in', sortText: `2${n}` }));
+  const keywords: Suggestion[] = KEYWORDS.map(([label, documentation]) => ({ label, kind: 'keyword', insertText: label, documentation, sortText: `3${label}` }));
+  return [...vars, ...globals, ...namespaces, ...keywords];
+}
+
+/** `for`, `if`, `try`, … and Mongo recipes (cursorLoop, countBy, loadChildren, …). */
+function statementItems(): Suggestion[] {
+  return STATEMENTS.map(([label, insertText, documentation]) => ({
+    label,
+    kind: 'snippet',
+    insertText,
+    snippet: true,
+    detail: 'snippet',
+    documentation: `${documentation}\n\n${insertText.replace(/\$\{\d+:([^}]*)\}/g, '$1').replace(/\$\d/g, '').replace(/\\\$/g, '$')}`,
+    sortText: `4${label}`,
+  }));
+}
+
+/** Word at the start of a statement (line start, or after `{` `}` `;`)? */
+function atStatementStart(before: string, word: string): boolean {
+  const head = before.slice(0, before.length - word.length);
+  const line = head.slice(head.lastIndexOf('\n') + 1);
+  if (/^\s*$/.test(line)) return true;
+  return /[{};]\s*$/.test(head);
 }
 
 /** Cursor inside an unfinished string on the current line? */
@@ -310,6 +349,11 @@ async function provideScript(
     if (t.t === 'value') return { suggestions: toItems(valueMembers(typer, t), model, position, partial, null) };
     if (t.t === 'cursor') return memberItems(cursorMethods(t), [], model, position, partial);
     if (t.t === 'collection') return memberItems(COLLECTION_METHODS, [], model, position, partial);
+    if (t.t === 'js') return { suggestions: toItems(jsMemberItems(membersOf(t.kind), t), model, position, partial, null) };
+    if (t.t === 'ns') return { suggestions: toItems(jsMemberItems(NAMESPACES[t.name] ?? [], t), model, position, partial, null) };
+    // Unknown receiver outside a db chain: no guesses (avoids cursor methods after `JSON.parse(x).`).
+    const chainStart = exprStartBefore(before, member.index);
+    if (t.t !== 'db' && !(chainStart >= 0 && /^db\b/.test(before.slice(chainStart)))) return undefined;
   }
 
   const sc = analyzeScript(before);
@@ -347,7 +391,10 @@ async function provideScript(
   // Bare identifier: variables (with their inferred type) and shell globals.
   const word = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)$/.exec(before);
   if (word && !inStringOnLine(before)) {
-    return { suggestions: toItems(globalItems(typer, before), model, position, word[1] as string, null) };
+    const partial = word[1] as string;
+    const items = globalItems(typer, before);
+    if (atStatementStart(before, partial)) items.push(...statementItems());
+    return { suggestions: toItems(items, model, position, partial, null) };
   }
   return undefined;
 }
